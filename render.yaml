@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: website-ai-chatbot
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13"
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: LLM_MODEL
+        value: openai/gpt-oss-20b
+      - key: JINA_API_KEY
+        sync: false
+      - key: JINA_BASE_URL
+        value: https://api.jina.ai/v1
+      - key: JINA_EMBED_MODEL
+        value: jina-embeddings-v3
+      - key: JINA_EMBED_DIMS
+        value: "1024"
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION
+        value: website_kb
+      - key: QDRANT_LOCAL
+        value: "0"
+      - key: KB_ENABLED
+        value: "true"
+      - key: KB_SOURCE_DIR
+        value: knowledge_base
+      - key: KB_MIN_SCORE
+        value: "0.5"
+      - key: KB_ADMIN_TOKEN
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "20"

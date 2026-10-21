@@ -1,0 +1,12 @@
+fastapi==0.156.4
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+pydantic==2.12.4
+qdrant-client==1.19.1
+
+# Optional: only needed to ingest PDF knowledge-base files
+# pypdf>=5.0
+
+# Development / testing
+pytest>=8.0
+pytest-asyncio>=0.26

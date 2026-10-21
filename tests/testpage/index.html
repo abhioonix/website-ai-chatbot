@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Widget host-page test</title>
+  <style>
+    /* Hostile styles: these MUST NOT leak into the widget shadow DOM. */
+    body { background: #e2e8f0; font-family: "Times New Roman", serif; }
+    * { box-sizing: border-box; }
+    button { background: red !important; color: yellow !important; font-size: 30px !important; border: 5px dashed magenta !important; }
+    div { border: 1px dotted orange; }
+    textarea, input { background: black !important; color: lime !important; font-size: 28px !important; }
+    h1 { color: purple; }
+  </style>
+</head>
+<body>
+  <h1>Host page (VaaniLink stand-in)</h1>
+  <p>This page deliberately applies aggressive global CSS to prove the widget isolates itself.</p>
+  <button id="hostButton" type="button">Host button (should be red/magenta)</button>
+  <textarea id="hostText" rows="2">Host textarea</textarea>
+  <script>
+    // A host script that would break a naive widget: it hijacks fetch.
+    window.__hostFetchCalls = 0;
+    const realFetch = window.fetch.bind(window);
+    window.fetch = function (url, opts) {
+      if (String(url).includes('/api/chat')) window.__hostFetchCalls++;
+      return realFetch(url, opts);
+    };
+  </script>
+
+  <script src="http://127.0.0.1:8000/widget.js"
+          data-api-url="http://127.0.0.1:8000"
+          data-position="bottom-right"
+          data-title="Test Assistant"
+          data-welcome="Hello from the test host page."
+          defer></script>
+</body>
+</html>
