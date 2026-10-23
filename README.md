@@ -289,6 +289,12 @@ curl -X POST https://YOUR-CHATBOT-HOST/kb/rebuild \
 
 ### Manual alternative
 
+# try  unset JINA_API_KEY QDRANT_URL QDRANT_API_KEY QDRANT_LOCAL KB_ENABLED
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+cd tests/testpage && python3 -m http.server 5173, then open http://127.0.0.1:5173
+
+
+
 Any host that can run a Python ASGI app works:
 
 ```bash

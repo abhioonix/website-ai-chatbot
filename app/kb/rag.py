@@ -37,12 +37,16 @@ async def answer_from_knowledge_base(
     chunks = await retrieve(question, settings)
 
     if not chunks:
-        logger.info("No relevant chunks for question — returning a refusal")
+        # Nothing relevant in the KB — fall back to a generic LLM answer
+        # instead of refusing, so the chatbot stays helpful.
+        logger.info("No relevant chunks for question — falling back to generic LLM answer")
+        reply, usage = await llm.complete_chat(settings, history, question)
         return {
-            "reply": NOT_FOUND_REPLY,
+            "reply": reply,
             "sources": [],
             "grounded": False,
             "matched": 0,
+            "usage": usage,
         }
 
     context = build_context(chunks, settings.kb_max_context_chars)

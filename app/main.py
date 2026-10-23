@@ -206,6 +206,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         return ChatResponse(reply=reply, model=settings.llm_model, usage=usage)
 
+    @app.post("/feedback", tags=["feedback"])
+    async def feedback(request: Request) -> dict:
+        enforce_rate_limit(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        logger.info("feedback: %s", body)
+        return {"ok": True}
+
     @app.get("/", include_in_schema=False)
     async def index() -> dict:
         return {

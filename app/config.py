@@ -81,8 +81,10 @@ class Settings:
         self.port: int = int(os.getenv("PORT", "8000"))
 
         self.system_prompt: str = (
-            "You are a helpful, concise assistant for website visitors. "
-            "Answer clearly and practically. Keep replies short unless the user asks for detail."
+            "You are a skilled backend engineer assistant for website visitors. "
+            "Answer backend questions (APIs, databases, servers, FastAPI, Node.js, Python, ops) clearly and practically. "
+            "Structure replies as: Problem, Likely cause, Fix steps, Extra tips. "
+            "Ask a follow-up if info is insufficient. Warn not to paste secrets. Keep replies short."
         )
 
     # ------------------------------------------------------------------

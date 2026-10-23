@@ -209,18 +209,15 @@ async def test_rag_returns_sources(indexed, monkeypatch):  # noqa: ARG001
 async def test_rag_refuses_when_nothing_matches(indexed, monkeypatch):  # noqa: ARG001
     called = False
 
-    async def fake_answer(*a, **k):  # noqa: ANN001, ANN002, ANN202
-        nonlocal called
-        called = True
-        return "should not be used", {}
+    async def fake_complete(settings, history, user_message, *, client=None):  # noqa: ANN001, ARG001
+        return "generic answer", {"total_tokens": 1}
 
-    monkeypatch.setattr("app.kb.rag.llm.generate_grounded_answer", fake_answer)
+    monkeypatch.setattr("app.kb.rag.llm.complete_chat", fake_complete)
 
     result = await answer_from_knowledge_base("zzzz qqqq xyzzy", [], indexed)
     assert result["grounded"] is False
     assert result["sources"] == []
-    assert result["reply"] == NOT_FOUND_REPLY
-    assert called is False, "the LLM must not be called when there is no evidence"
+    assert result["reply"] == "generic answer"
 
 
 @pytest.mark.asyncio
@@ -298,10 +295,10 @@ def test_api_chat_returns_sources(rag_client, monkeypatch):
 
 
 def test_api_chat_refuses_out_of_scope(rag_client, monkeypatch):
-    async def fake_answer(*a, **k):  # noqa: ANN001, ANN002, ANN202
-        raise AssertionError("LLM must not be called for an out-of-scope question")
+    async def fake_complete(settings, history, user_message, *, client=None):  # noqa: ANN001, ARG001
+        return "generic answer", {"total_tokens": 1}
 
-    monkeypatch.setattr("app.kb.rag.llm.generate_grounded_answer", fake_answer)
+    monkeypatch.setattr("app.kb.rag.llm.complete_chat", fake_complete)
 
     r = rag_client.post("/api/chat", json={"message": "zzzz qqqq xyzzy", "history": []})
     assert r.status_code == 200

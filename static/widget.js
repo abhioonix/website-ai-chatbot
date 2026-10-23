@@ -177,7 +177,7 @@
     var dot = el('span', 'cb-dot');
     var titleWrap = el('div');
     var titleEl = el('div', 'cb-title', cfg.title);
-    var subEl = el('div', 'cb-sub', 'Typically replies instantly');
+    var subEl = el('div', 'cb-sub', "Don't paste secrets or customer data");
     titleWrap.appendChild(titleEl);
     titleWrap.appendChild(subEl);
     var closeBtn = el('button', 'cb-close', '×');
@@ -236,6 +236,20 @@
       if (isError) bubble.setAttribute('data-error', 'true');
       var p = el('p', null, text);
       bubble.appendChild(p);
+
+      // Simple fenced code block rendering (```...```).
+      var codeMatch = text.match(/```[\\w]*\\n?([\\s\\S]*?)```/);
+      if (codeMatch) {
+        var pre = el('pre');
+        pre.style.background = '#0f172a';
+        pre.style.color = '#e2e8f0';
+        pre.style.padding = '8px';
+        pre.style.borderRadius = '8px';
+        pre.style.overflow = 'auto';
+        pre.style.fontSize = '12px';
+        pre.textContent = codeMatch[1].trim();
+        bubble.appendChild(pre);
+      }
 
       // Citation chips — built with textContent, never innerHTML.
       if (sources && sources.length) {
@@ -318,6 +332,16 @@
           return;
         }
         appendBubble('assistant', reply, false, data.sources);
+        // feedback buttons
+        var fb = el('div');
+        fb.style.display = 'flex'; fb.style.gap = '6px'; fb.style.marginTop = '4px';
+        var up = el('button', null, '👍'); var down = el('button', null, '👎');
+        [up, down].forEach(function(b){ b.style.background='transparent'; b.style.border='1px solid #cbd5e1'; b.style.borderRadius='6px'; b.style.cursor='pointer'; b.style.padding='2px 6px'; });
+        up.onclick = function(){ fetch(cfg.apiUrl+'/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vote:'up',message:text})}); up.disabled=true; down.disabled=true; };
+        down.onclick = function(){ fetch(cfg.apiUrl+'/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vote:'down',message:text})}); up.disabled=true; down.disabled=true; };
+        fb.appendChild(up); fb.appendChild(down);
+        body.appendChild(fb);
+        body.scrollTop = body.scrollHeight;
         addMessage('assistant', reply);
         setOffline(false);
       } catch (err) {
