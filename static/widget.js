@@ -27,7 +27,7 @@
   var STYLE = ':host{all:initial}' +
     ':host{--cb-accent:#84cc16}' +
     '.cb-root{position:fixed;z-index:2147483000;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;' +
-    'bottom:24px;right:24px;display:flex;flex-direction:column;align-items:flex-end;gap:12px}' +
+    'bottom:90px;right:24px;display:flex;flex-direction:column;align-items:flex-end;gap:12px}' +
     '.cb-root[data-pos="bottom-left"]{right:auto;left:24px;align-items:flex-start}' +
     '.cb-launcher{width:56px;height:56px;border-radius:50%;border:0;cursor:pointer;background:var(--cb-accent);color:#1a2e05;' +
     'display:flex;align-items:center;justify-content:center;box-shadow:0 10px 25px rgba(0,0,0,.22);transition:transform .18s ease,box-shadow .18s ease}' +
@@ -76,7 +76,7 @@
     '.cb-send:disabled{opacity:.5;cursor:not-allowed}' +
     '.cb-send:focus-visible{outline:3px solid #1a2e05;outline-offset:2px}' +
     '@media (max-width:480px){.cb-panel{width:calc(100vw - 24px);height:calc(100vh - 96px);max-height:none}' +
-    '.cb-root{bottom:16px;right:16px}.cb-root[data-pos="bottom-left"]{left:16px}}';
+    '.cb-root{bottom:80px;right:16px}.cb-root[data-pos="bottom-left"]{left:16px}}';
 
   // ---------------------------------------------------------------- config
   var current = typeof document !== 'undefined' ? document.currentScript : null;
