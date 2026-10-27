@@ -1,59 +1,134 @@
 # Backend Troubleshooting — Node.js and Express
 
+This document covers Node.js/Express-specific application errors. Adapt the patterns here to your project structure.
+
+---
+
 ## npm install fails
 
-Clear cache: `npm cache clean --force`. Delete `node_modules` and `package-lock.json`, then `npm install`. Check Node version matches package `engines`. Use `nvm` to switch versions.
+**Cause:** Missing dependencies, version mismatch, or corrupted install.
+
+**Fix:**
+1. Clear cache: `npm cache clean --force`.
+2. Delete `node_modules` and `package-lock.json`, then run `npm install`.
+3. Check Node version matches `package.json` `engines` field.
+4. Use `nvm` to switch versions.
+5. If native modules fail: `npm rebuild` or install build tools (`build-essential` on Linux).
+
+---
 
 ## EADDRINUSE: port already in use
 
-Another process holds the port. Find it: `lsof -i :3000` (Linux/Mac) or `netstat -ano | findstr :3000` (Windows). Kill it or change `PORT` env var.
+**Cause:** Another process holds the port.
+
+**Fix:**
+1. Find the process: `lsof -i :3000` (Linux/Mac) or `netstat -ano | findstr :3000` (Windows).
+2. Kill the process or change the `PORT` environment variable.
+
+---
 
 ## Cannot find module
 
-Node resolves modules from `node_modules` relative to the file. Run `npm install`. Check `require`/`import` paths are relative (`./`) for local files. For ES modules use `"type": "module"` in `package.json`.
+**Cause:** Dependencies not installed, wrong path, or CommonJS/ESM mismatch.
 
-## Additional Node.js / Express Errors
+**Fix:**
+1. Run `npm install`.
+2. Verify `require()` or `import` paths are relative (`./`) for local files.
+3. For ES modules, ensure `"type": "module"` is set in `package.json`.
+4. For dynamic imports, wrap in `async` function and use `await import()`.
 
-### Express middleware order
-Middleware executes in registration order. Register parsers (`express.json()`) before routes that read `req.body`. Register error-handling middleware (4 args) after the routes/middleware whose errors it handles.
+---
 
-### CORS in Express
-Install/configure the `cors` middleware before routes that need it. Example for local frontend:
+## Common Node.js error codes
+
+| Code | Name | Fix |
+|---|---|---|
+| EADDRINUSE | Port already in use | Change port or kill process |
+| ECONNREFUSED | Connection refused | Verify target service running, check host/port |
+| ENOTFOUND | DNS lookup failed | Check domain, DNS config, firewall |
+| ETIMEDOUT | Connection timed out | Check network, provider status, increase timeout |
+| EPERM | Permission denied | Check file permissions, run with correct user |
+| EACCES | Permission denied | Check file/dir permissions, sudo not needed in production |
+| ENOENT | No such file or directory | Verify path, check file exists |
+| EISDIR | Is a directory | Use fs.readFileSync for files, not directories |
+| EMFILE | Too many open files | Increase limit, close handles, fix leaks |
+| ENONET | No such network path | Check network, DNS, verify path/URL |
+| EHOSTUNREACH | Host unreachable | Check network, firewall, VPN |
+| EPROTO | Protocol error | Check protocol version, TLS config, HTTP version |
+
+---
+
+## Express-specific
+
+**Cause:** Middleware order, routing, or error handling issues.
+
+**Fix:**
+1. **Middleware order:** Register parsers (`express.json()`) before routes that read `req.body`.
+2. **Error handling:** Register 4-argument error handlers (`err, req, res, next`) LAST, after routes.
+3. **Async routes:** Use `try/catch` or a wrapper; pass errors to `next()`.
+4. **CORS:** Use the `cors` middleware before routes that need it, with specific origins in production.
+
+---
+
+## CORS in Express
+
+**Fix:**
 ```javascript
 const cors = require("cors");
 app.use(cors({
-  origin: "http://localhost:3000",
+  origin: "https://your-frontend.com",  // specific origin, not wildcard
   credentials: true,
 }));
 ```
-Use the real frontend origin(s) in production. Credentialed requests cannot use `Access-Control-Allow-Origin: *`. The browser client must be configured to send credentials where required.
 
-### Unhandled promise rejection / async route errors
-Always catch rejected promises. Use `try/catch` and pass failures to Express error middleware, or use a wrapper compatible with your Express version. Don't rely on unhandled rejections as an error-handling strategy.
+**Production advice:** Use specific origins. Credentialed requests cannot use wildcard origins. The browser client must be configured to send credentials where required.
 
-### Environment variables in Node
-Read configuration with `process.env.NAME`. For local `.env` files, use `dotenv`: `require("dotenv").config()` (CommonJS) or the corresponding ES module import. Never commit `.env` files or secrets.
+---
 
-### Nodemon does not restart
-Check `nodemon.json` ignore/watch patterns, confirm the changed file is within watched paths, and check filesystem watcher limits (`fs.inotify.max_user_watches`). Type `rs` in the Nodemon terminal to restart manually.
+## Environment variables
 
-### `EPERM` or symlink errors on external drives
-Some filesystems (exFAT/NTFS) lack symlink support. Move the project to the internal ext4 filesystem and run npm there.
+**Cause:** Missing or misnamed env vars.
 
-### Express `ENOENT` / "Cannot find module"
-**Cause:** A dependency is not installed, a local path is wrong, or CommonJS/ES-module settings don't match.
-**Fix:** Install dependencies, verify local imports use relative paths (`./`) where needed, check `package.json` module config. For ES modules, set `"type": "module"` in `package.json`.
+**Fix:**
+1. Use `process.env.VAR_NAME` to read config.
+2. For local `.env` files, use `dotenv`: `require("dotenv").config()`.
+3. Never commit `.env` files or secrets.
+4. Verify env vars in production (platform dashboard, Docker `--env` flag).
 
-### Express rate limiting
-**Fix:** Use `express-rate-limit`. Choose keys and limits per your threat model (IP or authenticated user), return `429` when a client exceeds its rate, include `Retry-After` header, configure trusted proxy handling so client IPs can't be spoofed.
+---
 
-### Express error handling middleware
-**Fix:** Register error-handling middleware (4 args: `err, req, res, next`) LAST, after routes and other middleware. Use `try/catch` in async handlers or a wrapper. Don't rely on unhandled rejections.
+## Nodemon not restarting
 
-### Node.js `ETIMEDOUT`
-**Cause:** A network call or operation timed out.
-**Fix:** Check upstream health, database query plans, external API calls, app logs, and proxy/app timeout settings. Fix underlying latency before increasing timeouts indiscriminately.
+**Fix:**
+1. Check `nodemon.json` ignore/watch patterns.
+2. Verify changed file is within watched paths.
+3. Check filesystem watcher limits (`fs.inotify.max_user_watches`).
+4. Type `rs` in the Nodemon terminal to restart manually.
 
-### Node.js `ECONNREFUSED`
-**Cause:** The server could not connect to a service.
-**Fix:** Verify the target service is running, check host/port in config, check firewall rules, for Docker use container/service name as host.
+---
+
+## Common Express error codes
+
+| Code | Name | Fix |
+|---|---|---|
+| 400 | Bad Request | Validate request body |
+| 401 | Unauthorized | Provide valid `Authorization: Bearer` header |
+| 403 | Forbidden | Check RBAC, API key scope, resource ownership |
+| 404 | Not Found | Verify route path and base URL |
+| 405 | Method Not Allowed | Configure allowed methods on route |
+| 429 | Too Many Requests | Implement exponential backoff with jitter |
+| 500 | Internal Server Error | Check backend logs, verify env vars, reproduce |
+| 502 | Bad Gateway | Verify backend running, check proxy config |
+| 503 | Service Unavailable | Check health endpoint, verify deps, retry with backoff |
+| 504 | Gateway Timeout | Review timeout settings, identify slow component |
+
+---
+
+## Debugging
+
+**Fix:**
+1. **Logging:** Use `console.error` or a logger (winston, pino) with levels.
+2. **Stack traces:** Read bottom-up; the last frame is where the error originated.
+3. **Breakpoints:** Use VS Code debugger, Chrome DevTools, or `node --inspect`.
+4. **Process manager:** Use `pm2` for auto-restart: `pm2 start app.js --name api`.
+5. **Health check:** Expose `/health` for load balancer and container orchestrator probes.

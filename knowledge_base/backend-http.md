@@ -2,17 +2,13 @@
 
 ## Purpose
 
-This document is a troubleshooting reference for common backend/API errors in the `website-ai-chatbot` project. It is intended for the chatbot knowledge base.
+This document is a platform-agnostic troubleshooting reference for common backend/API errors across all backend types (Python/FastAPI, Node.js/Express, etc.). It is intended for use as a general knowledge base for any backend application.
 
-The project uses a FastAPI backend and exposes these relevant endpoints:
+HTTP status codes below describe common meanings. The exact response for a particular failure depends on the backend implementation, framework, hosting platform, and upstream provider. Check the response body and server logs before deciding on a fix.
 
-- `GET /health` — checks backend liveness and reports LLM/knowledge-base status.
-- `GET /kb/status` — reports whether the knowledge base is configured and indexed.
-- `POST /kb/rebuild` — rebuilds the knowledge-base vector index.
-- `POST /api/chat` — accepts a chat message and returns an assistant reply.
-- `GET /widget.js` — serves the embeddable chat widget.
+**General error response shape:** `{\"error\": \"human-readable message\"}` (adjust to your API contract).
 
-**Important:** HTTP status codes below describe common meanings. The exact response for a particular failure depends on the backend implementation, hosting platform, and upstream provider. Check the response body and server logs before deciding on a fix. This project documents error responses in the shape `{"error": "human-readable message"}`.
+**General troubleshooting rule:** Always check the response body and server logs before assuming the cause. Never expose secrets, tokens, stack traces, or internal implementation details to end users.
 
 ---
 
@@ -24,14 +20,14 @@ The project uses a FastAPI backend and exposes these relevant endpoints:
 
 **Common causes**
 - The JSON body is malformed.
-- A required field such as `message` is missing.
+- A required field is missing.
 - A field has the wrong data type.
 - The client sends an unsupported request format.
 
 **How to troubleshoot**
 1. Check that the request body is valid JSON.
-2. For `POST /api/chat`, confirm that `message` is a string.
-3. Confirm that `history`, if supplied, follows the expected format of role/content objects.
+2. Validate the request against the API schema (Pydantic, Joi, Zod, etc.).
+3. Check field types, required fields, and format constraints.
 4. Read the error message returned by the API and correct the request.
 
 **Example**
@@ -48,429 +44,323 @@ The project uses a FastAPI backend and exposes these relevant endpoints:
 
 **Common causes**
 - A protected endpoint requires a token.
-- The admin token is missing or incorrect.
-- An environment variable used for authentication is not configured as expected.
+- Admin token missing or incorrect.
+- API key invalid or expired.
+- Token not sent in the `Authorization: Bearer` header.
 
 **How to troubleshoot**
-1. Check whether the endpoint requires authentication.
-2. For `POST /kb/rebuild`, check whether `KB_ADMIN_TOKEN` is configured.
-3. If the token is configured, send the matching `x-kb-admin-token` header.
-4. Do not put secret tokens in public frontend code or commit them to Git.
-
-**Note:** The documented rebuild endpoint requires the header when `KB_ADMIN_TOKEN` is set. Do not assume every endpoint requires authentication.
+1. Check which authentication mechanism is required.
+2. Verify the token/API key is present and correctly formatted.
+3. Check token expiry.
+4. Verify credentials are not expired or revoked.
+5. Never commit tokens or secrets to version control.
 
 ### 403 — Forbidden
 
 **Meaning:** The server understood the request but refuses to allow it.
 
 **Common causes**
-- The credentials are valid but do not have permission.
-- A hosting or security rule blocks the request.
-- The request is blocked by a proxy or platform policy.
+- Valid credentials but insufficient permissions.
+- RBAC/role-based access control rules.
+- API key lacks required scope.
+- Hosting/security rule or proxy/platform policy.
 
 **How to troubleshoot**
-1. Confirm that the endpoint is intended to be publicly accessible.
-2. Check authentication and authorization settings.
-3. Review hosting, reverse-proxy, and security logs.
+1. Check RBAC rules and resource ownership.
+2. Verify API key scope and permissions.
+3. Check security logs for the denied action.
 4. Do not disable security controls as a first fix.
+5. Review route guards and middleware.
 
 ### 404 — Not Found
 
-**Meaning:** The requested route or resource does not exist at the URL being called.
+**Meaning:** The requested route or resource does not exist.
 
 **Common causes**
-- The API URL or route path is misspelled.
-- The frontend is configured with the wrong backend base URL.
-- The deployment is serving an older version of the application.
-- The request is sent to the wrong host or path.
+- URL or route path misspelled.
+- Wrong backend base URL.
+- Stale deployment or outdated client.
+- Wrong host or path in request.
 
 **How to troubleshoot**
-1. Verify the backend base URL and route path.
-2. Check the documented routes: `/health`, `/widget.js`, `/kb/status`, `/kb/rebuild`, and `/api/chat`.
-3. Open `GET /health` to confirm that the expected backend is reachable.
-4. Check deployment logs if a route expected to exist returns 404.
+1. Verify the base URL and route path.
+2. Check documented routes for the endpoint.
+3. Verify deployment is the correct version.
+4. Check CDN/proxy redirect rules.
+5. Test with the correct host and port.
 
 ### 405 — Method Not Allowed
 
-**Meaning:** The URL exists, but the endpoint does not support the HTTP method used.
+**Meaning:** The URL exists but the endpoint does not support the HTTP method used.
 
-**Fix:** Check whether the client should use GET, POST, PUT, PATCH, or DELETE. Configure allowed methods on the route and return an appropriate Allow header.
+**How to troubleshoot**
+1. Check the HTTP method (GET/POST/PUT/PATCH/DELETE).
+2. Verify the route accepts the method.
+3. Configure allowed methods on the route (e.g., `allow_methods=["*"]`).
+4. Return the proper `Allow` header.
 
 ### 406 — Not Acceptable
 
-**Meaning:** The server cannot return a response in any format listed in the request's Accept header.
+**Meaning:** The server cannot return a response in any format listed in the request's `Accept` header.
 
-**Fix:** Check the client's Accept header and the response formats supported by the API. Document supported content types.
+**How to troubleshoot**
+1. Check the `Accept` header.
+2. Verify supported response formats (JSON, XML, etc.).
+3. Update the client to request a supported format.
 
 ### 408 — Request Timeout
 
 **Meaning:** The request took too long and timed out.
 
 **Common causes**
-- Network connectivity is slow or unstable.
-- The backend is busy.
-- An upstream AI provider takes too long to respond.
+- Slow network.
+- Busy backend.
+- Upstream AI provider or external service slow.
+- Proxy or backend timeout too short.
 
 **How to troubleshoot**
-1. Retry once after checking network connectivity.
-2. Check backend logs and upstream-provider status.
-3. Review timeout settings, including `LLM_TIMEOUT_SECONDS` (documented default: `30` seconds).
-4. Avoid repeated rapid retries that can increase load.
+1. Retry once after checking the network.
+2. Check backend logs for slow operations.
+3. Review timeout settings (`LLM_TIMEOUT_SECONDS`, proxy timeouts).
+4. Avoid rapid retries.
+5. Identify the slow component first.
 
 ### 409 — Conflict
 
-**Meaning:** The request conflicts with the current state of a resource, such as creating a record that already exists.
+**Meaning:** The request conflicts with the current resource state (e.g., duplicate record).
 
-**Fix:** Check for duplicate records and state changes. Use unique constraints and return a clear conflict message. For concurrent updates, consider version fields or optimistic locking.
+**How to troubleshoot**
+1. Check for duplicate records.
+2. Use unique constraints to prevent conflicts.
+3. Return a clear conflict message.
+4. Consider optimistic locking for concurrent updates.
+5. Use `PUT` with conditional headers to resolve conflicts.
 
 ### 410 — Gone
 
-**Meaning:** The resource was intentionally removed and is no longer available.
+**Meaning:** The resource has been intentionally removed and is no longer available.
 
-**Fix:** Confirm whether the endpoint or resource is retired. Update clients to use the replacement route and document the deprecation.
+**How to troubleshoot**
+1. Confirm the resource has been retired.
+2. Update clients to use the replacement route.
+3. Document deprecation and removal dates.
+4. Redirect to replacement endpoint if appropriate.
 
 ### 413 — Payload Too Large
 
-**Meaning:** The request body exceeds the maximum size accepted by the server or an intermediary.
+**Meaning:** The request body exceeds the server or intermediary limit.
 
 **Common causes**
-- The client sends an unusually large request.
-- Chat history is too long.
-- A proxy or hosting platform has a smaller body-size limit.
+- Unusually large request body.
+- Long chat history.
+- Proxy or platform limit exceeded.
 
 **How to troubleshoot**
-1. Reduce the request body size.
-2. Send only the conversation history needed for the current question.
-3. Check server and proxy body-size limits.
-4. If this project's documented 10 MB request-body guard is active, ensure the request is below that limit.
+1. Reduce body size.
+2. Send only the needed history.
+3. Check server, proxy, and platform limits.
+4. Ensure the request is below the 10 MB guard (or platform limit).
 
 ### 415 — Unsupported Media Type
 
-**Meaning:** The request's Content-Type is not supported by the endpoint.
+**Meaning:** The `Content-Type` is not supported by the endpoint.
 
-**Fix:** Send the expected content type, such as application/json, and verify that the server has the required parser or upload handler enabled.
+**How to troubleshoot**
+1. Send the expected content type (e.g., `application/json`).
+2. Verify the parser or upload handler is enabled.
+3. Check supported MIME types in the route.
 
 ### 416 — Range Not Satisfiable
 
-**Meaning:** A requested byte range falls outside the available content.
+**Meaning:** The requested byte range is outside the available content.
 
-**Fix:** Check the Range header and the current file size. If range requests are unsupported, handle them consistently and document the behavior.
+**How to troubleshoot**
+1. Check the `Range` header.
+2. Verify the current file or resource size.
+3. Handle the range request consistently.
+4. Return a proper 416 response with `Content-Range` header.
 
 ### 424 — Failed Dependency
 
-**Meaning:** The request failed because an operation it depends on failed.
+**Meaning:** The request failed because a dependent operation failed.
 
-**Fix:** Inspect the downstream service or prerequisite operation. Return a useful error without exposing internal details, and consider retries only for transient failures.
+**How to troubleshoot**
+1. Inspect the downstream service or dependency.
+2. Return a useful error message.
+3. Retry only for transient failures.
+4. Log the dependency failure with correlation ID.
 
 ### 429 — Too Many Requests
 
-**Meaning:** The client has sent too many requests within a limited period.
+**Meaning:** The client has exceeded the rate limit.
 
 **Common causes**
-- The client sends requests repeatedly or in a tight loop.
-- Multiple users share a rate limit.
-- A hosting platform or upstream AI provider applies rate limiting.
+- Tightly looped requests.
+- Shared rate limit across clients.
+- Provider applies rate limiting.
 
 **How to troubleshoot**
-1. Wait before retrying.
-2. Check whether the response includes a `Retry-After` header.
-3. Prevent accidental duplicate submissions in the frontend.
-4. Review backend and AI-provider rate limits.
-5. Use exponential backoff for automated retries.
+1. Wait and check the `Retry-After` header.
+2. Prevent duplicate submissions.
+3. Review configured rate limits.
+4. Use exponential backoff.
+5. Debounce rapid frontend input.
 
 ### 500 — Internal Server Error
 
-**Meaning:** The backend encountered an unexpected condition and could not complete the request.
+**Meaning:** An unexpected server-side failure occurred.
 
 **Common causes**
-- An unhandled exception in application code.
-- Invalid or missing runtime configuration.
-- A failure while processing a request or knowledge-base document.
-- An unexpected error from a dependency.
+- Unhandled exception in application code.
+- Missing configuration.
+- Database failure.
+- Dependency error.
+- Memory exhaustion.
 
 **How to troubleshoot**
-1. Check backend logs at the exact time of the request.
-2. Confirm required environment variables are configured.
-3. Reproduce the issue with the same endpoint and request body.
-4. Check recent code or deployment changes.
-5. Return a safe error message to the client; never expose API keys, stack traces, or internal secrets.
+1. Check backend logs for the stack trace.
+2. Verify environment variables are set correctly.
+3. Reproduce with the same request/body.
+4. Check for recent changes (deploy, config, dependency).
+5. Never expose secrets or stack traces to end users.
+6. Restrict debug mode in production.
 
 ### 502 — Bad Gateway
 
-**Meaning:** A gateway or proxy received an invalid response from the backend or an upstream service.
+**Meaning:** The gateway or proxy received an invalid response from the backend or upstream service.
 
 **Common causes**
-- The application process is down or restarting.
-- A reverse proxy points to the wrong host or port.
-- An upstream service closes the connection unexpectedly.
-- The backend crashes while processing the request.
+- Backend is down or restarting.
+- Wrong proxy port configured.
+- Upstream service crashed.
+- Backend returned an invalid or empty response.
 
 **How to troubleshoot**
-1. Check whether the application is running.
-2. Test `GET /health`.
-3. Review application and reverse-proxy logs.
-4. Verify the configured upstream address and port.
-5. Check whether the issue is caused by the backend host or an external provider.
+1. Verify the backend is running and healthy.
+2. Test `GET /health` and inspect its reported status.
+3. Review logs for upstream errors.
+4. Verify the upstream address and port.
+5. Check if the issue is caused by the backend host or external provider.
+6. Test the backend directly on the host.
 
 ### 503 — Service Unavailable
 
-**Meaning:** The service is temporarily unable to handle the request.
+**Meaning:** The service is temporarily unable to handle requests, but it is expected to become available after some delay.
 
 **Common causes**
-- The backend is restarting, overloaded, or temporarily unavailable.
-- The hosting platform has suspended or restarted the service.
-- A required upstream service is unavailable.
-- The service is not ready after deployment.
+
+**Backend/service-side**
+- The backend process is restarting, crashed, or in a crash loop.
+- The hosting platform suspended or restarted the service.
+- The backend is overloaded or running out of memory.
+- The app failed to start due to missing required environment variables.
+- The application crashed during startup (missing env var, failed DB connection, failed vector store connection).
+
+**Knowledge base / embedding**
+- `KB_ENABLED=false` or the knowledge base has not been rebuilt yet.
+- `JINA_API_KEY` is missing or invalid.
+- Qdrant (vector store) is unreachable or down.
+- The index has not been built or has been deleted.
+
+**LLM / AI provider**
+- The LLM provider returned 503, 502, or timed out.
+- Rate limit exceeded (`429`) — the provider may return 503 instead of 429 in some cases.
+- The LLM model is temporarily unavailable or overloaded.
+- `LLM_BASE_URL` or `LLM_MODEL` is misconfigured or the provider endpoint changed.
+
+**Upstream / proxy**
+- A reverse proxy or load balancer could not reach the backend.
+- The backend returned an invalid or empty response.
+- The proxy timeout is shorter than the backend's response time.
+
+**Deploy/startup failures**
+- Missing required environment variables (e.g., `JINA_API_KEY`, `KB_ENABLED`, `PORT`).
+- The app crashed during startup and is in a `CrashLoopBackOff` state.
+- The app is waiting for a service that is not ready (e.g., Qdrant, PostgreSQL).
 
 **How to troubleshoot**
-1. Check service availability and deployment status.
-2. Call `GET /health` and inspect its reported status.
-3. Check whether required LLM or knowledge-base configuration is available.
-4. Review application logs and provider status.
-5. Retry after a short delay; use backoff rather than continuous retries.
 
-**Important distinction:** A knowledge base that is not configured may cause the chatbot to operate in its documented fallback mode. Check `/kb/status` rather than assuming every knowledge-base issue is a 503.
+1. **Check backend logs** — Look for the exact error at the time of the 503.
+   - `KeyError: 'JINA_API_KEY'` — missing environment variable
+   - `Connection refused` to Qdrant — vector store not reachable
+   - `ModuleNotFoundError` — missing Python package or wrong directory
+   - `Failed to build index` — knowledge base or embedding config issue
+
+2. **Call the health endpoint** and inspect the reported status:
+   - If the response includes `status: "ok"`, the backend is alive but dependencies may be down.
+   - If the response includes `status: "error"` or a dependency field is `false`, that dependency is the cause.
+   - Example healthy response: `{"status": "ok", "dependencies": {"kb": true, "llm": true, "vector_store": true}}`
+
+3. **Check knowledge base status** — Verify:
+   - `enabled` is `true` (not `false` or absent)
+   - Embedding configuration is present and valid
+   - Vector store configuration is present
+   - The index has been built successfully (build on startup or via rebuild command)
+
+4. **Check the LLM provider** — Verify:
+   - `LLM_API_KEY` is set and valid
+   - `LLM_BASE_URL` is correct
+   - `LLM_MODEL` is a valid model
+   - The provider is not experiencing outages (check provider status page)
+
+5. **Check the hosting platform** — For Render:
+   - View the deployment logs in the dashboard
+   - Check if the service is in a "restarting" or "crashed" state
+   - Verify the service is not sleeping (free tier may sleep after inactivity)
+   - Check the `PORT` environment variable — Render provides this dynamically
+   - Review the `startCommand` in the deployment config
+
+6. **Check for rate limiting** — The provider may be rate-limiting your account. Check:
+   - Rate limit settings in the deployment config
+   - LLM provider dashboard for quota usage
+   - Request frequency from the frontend
+
+7. **Retry after a delay** — 503 is a transient error. Use exponential backoff:
+   - Wait 1 second, then retry once
+   - If still failing, wait 5 seconds, then retry once
+   - If still failing, wait 30 seconds, then retry once
+   - If still failing after 3 retries, surface the error to the user with a friendly message
+
+**Platform-specific 503 causes**
+- **Free tier sleeping**: Free dynos sleep after 15 minutes of inactivity. When woken up, there may be a brief 503.
+- **Build fails**: If the build fails, the service may not start, causing 503 on first request.
+- **Resource limits**: Free dyno memory limits may cause crashes under load.
+- **Route misconfiguration**: If the proxy points to the wrong port or host, the backend may not be reachable.
+
+**Auto-healing checklist**
+1. Check the health endpoint for dependency status.
+2. Verify environment variables are set.
+3. Check the deployment logs for startup errors.
+4. Verify the knowledge base index was built successfully.
+5. Verify the LLM provider is responding.
+6. Retry after a delay.
+7. If the issue persists, check the platform dashboard for service health.
+
+**Example: How to read a 503 in the chatbot UX**
+When the chatbot returns a 503 instead of a knowledge-based answer, the frontend should:
+1. Show a user-friendly message: "The service is temporarily unavailable. Please wait a moment and try again."
+2. Not expose internal error details (no stack traces, no API keys, no provider errors).
+3. Optionally show a "Try again" button that retries with backoff.
+4. If the error persists for >10 minutes, suggest contacting support.
+
+---
 
 ### 504 — Gateway Timeout
 
-**Meaning:** A gateway or proxy did not receive a response from the backend or upstream service in time.
+**Meaning:** The gateway or proxy did not receive a response from the backend or upstream service in time.
 
 **Common causes**
-- An AI-provider response is slow.
+- The AI provider response is slow.
 - The backend is waiting on a network or external-service call.
 - The proxy timeout is shorter than the operation's completion time.
+- The backend is overloaded.
 
 **How to troubleshoot**
 1. Check backend logs and the timing of the upstream request.
-2. Review `LLM_TIMEOUT_SECONDS` and hosting/proxy timeout settings.
+2. Review timeout settings (`LLM_TIMEOUT_SECONDS`, proxy timeout, connection pool timeouts).
 3. Check the status of the configured AI provider.
 4. Retry safely after a delay.
 5. Do not increase timeouts blindly; first identify which component is slow.
-
----
-
-## Data Validation and Serialization
-
-### File Upload Format Error
-
-**Cause:** The upload uses an unsupported format or the multipart form is incorrectly constructed.
-
-**Fix:** Use the expected multipart field name and let the HTTP client set the multipart boundary. Validate file type and size on the server rather than trusting the filename alone.
-
-### Serialization Error
-
-**Cause:** The response encoder cannot convert a custom object, date, decimal, or database type into JSON.
-
-**Fix:** Convert values to supported representations, such as ISO 8601 strings for dates and documented numeric or string formats for decimals. Use a consistent response schema.
-
-### Missing Required Field
-
-**Cause:** The client omitted a field required by the API contract.
-
-**Fix:** Check the request schema and required fields. Return a field-level validation error and keep API documentation synchronized with the implementation.
-
-### Invalid Pagination Parameters
-
-**Cause:** Page number, page size, limit, or offset is negative, malformed, or unreasonably large.
-
-**Fix:** Validate parameters at the API boundary, set a maximum page size, and return a 400 response for invalid values.
-
-### Unicode or Character-Encoding Problems
-
-**Cause:** Data is decoded using the wrong character encoding or the database and application use inconsistent encodings.
-
-**Fix:** Standardize on UTF-8 where appropriate, verify database column encoding, and test with non-English text and emoji.
-
----
-
-## Caching and Concurrency
-
-### Stale Cache Response
-
-**Cause:** Cached data was not invalidated after the underlying record changed.
-
-**Fix:** Define cache expiration and invalidation rules. Invalidate or update relevant keys after writes, and use versioned keys when appropriate.
-
-### Cache Stampede
-
-**Cause:** Many requests attempt to rebuild the same expired cache entry simultaneously.
-
-**Fix:** Use request coalescing, a short lock, stale-while-revalidate, or randomized expiration. Keep the fallback database path within capacity.
-
-### Race Condition During Updates
-
-**Cause:** Multiple requests read and modify the same state at the same time.
-
-**Fix:** Use database transactions, atomic updates, unique constraints, or optimistic locking. Reproduce the issue with concurrent tests.
-
-### Deadlock Detected
-
-**Cause:** Two or more transactions hold locks that the others need.
-
-**Fix:** Keep transactions short, acquire locks in a consistent order, and inspect the database deadlock report. Retry only the full transaction when the database marks the error as retryable.
-
-### Duplicate Job Execution
-
-**Cause:** A queue or scheduler delivers a job more than once, or a worker retries after the result was already committed.
-
-**Fix:** Make jobs idempotent. Use a unique job key or idempotency record, and acknowledge messages only after successful processing.
-
----
-
-## Queues and External Services
-
-### Message Queue Consumer Lag
-
-**Cause:** Messages arrive faster than workers can process them, or workers are failing repeatedly.
-
-**Fix:** Monitor queue depth and processing time. Check worker errors, scale consumers carefully, and use bounded retries with a dead-letter queue.
-
-### Poison Message Repeatedly Fails
-
-**Cause:** A malformed or unsupported message fails every processing attempt.
-
-**Fix:** Limit retries, record the failure reason safely, and route the message to a dead-letter queue for inspection. Do not let one message block the entire queue.
-
-### External API Returns Unexpected Response
-
-**Cause:** The provider changed its schema, returned HTML instead of JSON, or sent an undocumented status.
-
-**Fix:** Check status code and content type before parsing. Validate responses against a schema, log a request or correlation ID, and handle unknown fields or statuses safely.
-
-### Retry Storm
-
-**Cause:** Many requests retry a failing dependency at the same time, increasing its load.
-
-**Fix:** Use exponential backoff with jitter, set retry limits, and apply circuit breaking. Do not automatically retry non-idempotent operations unless they use an idempotency key.
-
-### Webhook Signature Verification Failed
-
-**Cause:** The signing secret is incorrect, the raw request body changed, or the signature header is parsed incorrectly.
-
-**Fix:** Use the provider's exact signature algorithm and raw request bytes. Compare signatures with a constant-time comparison and keep webhook secrets out of logs.
-
----
-
-## Security and Configuration
-
-### CSRF Token Validation Failed
-
-**Cause:** A state-changing request is missing a valid anti-CSRF token or the token does not match the session.
-
-**Fix:** Include the token as required by the framework, verify cookie and origin settings, and do not disable CSRF protection as a general workaround.
-
-### Secret or Configuration Value Missing
-
-**Cause:** An environment variable is absent, misspelled, or unavailable in the deployment environment.
-
-**Fix:** Validate required configuration at startup and fail with a clear, non-sensitive message. Check deployment settings without printing secret values.
-
-### Permission Denied When Writing a File
-
-**Cause:** The service account lacks access to the target directory, or the path is read-only.
-
-**Fix:** Check the process user and directory permissions. Grant only the minimum required access and avoid running the whole service as an administrator.
-
-### Request Rejected by Rate Limiter
-
-**Cause:** The client exceeded a configured request quota.
-
-**Fix:** Return 429 Too Many Requests with a suitable Retry-After value when possible. Review per-user or per-IP limits and use backoff on the client. Do not remove rate limiting without assessing abuse risk.
-
-### Insecure Direct Object Reference (IDOR)
-
-**Cause:** The backend accepts a resource ID without checking whether the authenticated user is allowed to access that resource.
-
-**Fix:** Enforce authorization on every object read and write. Test access with a different user's ID and avoid relying on hidden UI controls as protection.
-
----
-
-## Observability and Reliability
-
-### Correlation ID Missing
-
-**Cause:** Requests cannot be connected across application logs and downstream services.
-
-**Fix:** Generate or validate a request ID at the entry point, pass it to downstream calls, and include it in structured logs. Do not trust arbitrary IDs as authentication.
-
-### Health Endpoint Returns Success While Dependencies Are Down
-
-**Cause:** The health check only verifies that the process is running.
-
-**Fix:** Separate liveness checks from readiness checks. Readiness may verify critical dependencies with short timeouts; avoid making liveness depend on every external service.
-
-### Graceful Shutdown Fails
-
-**Cause:** The process exits before in-flight requests or background jobs finish.
-
-**Fix:** Handle termination signals, stop accepting new work, drain active requests, and close database and queue connections within a defined shutdown timeout.
-
-### Disk Space Exhausted
-
-**Cause:** Logs, temporary files, uploads, or database files consumed available storage.
-
-**Fix:** Check disk usage and log rotation, remove only safe temporary data, and alert before storage reaches capacity. Never delete database files manually to free space.
-
-### Clock Skew Between Services
-
-**Cause:** Servers have different system times, causing token, signature, or event-timestamp validation failures.
-
-**Fix:** Synchronize hosts using a reliable time service, monitor clock drift, and allow only a small documented tolerance where the protocol requires it.
-
-### Error Messages Expose Internal Details
-
-**Cause:** Debug traces, SQL errors, file paths, or secrets are returned to clients.
-
-**Fix:** Return a generic public error with a request ID. Keep detailed diagnostics in access-controlled logs and disable debug output in production.
-
----
-
-## Knowledge Base Troubleshooting
-
-### Problem: The chatbot gives no knowledge-based answer
-
-**Check**
-1. Call `GET /kb/status`.
-2. Confirm that `enabled` is `true`.
-3. Confirm that embedding and vector-store configuration is present.
-4. Confirm that source documents are inside `knowledge_base/`.
-5. Rebuild the index after adding or changing documents.
-
-**Rebuild command**
-```bash
-python3 -m scripts.rebuild_index
-```
-
-**Expected result:** The command reports document, chunk, and stored counts. If rebuilding fails, inspect the full command output and backend configuration.
-
-### Problem: `POST /kb/rebuild` fails
-
-**Check**
-- Confirm the backend is running and the URL is correct.
-- If `KB_ADMIN_TOKEN` is set, send the matching `x-kb-admin-token` header.
-- Check Jina embedding and Qdrant configuration.
-- Review server logs for the actual error.
-
-### Problem: `GET /kb/status` reports the knowledge base is disabled
-
-**Meaning:** The knowledge base may not yet be ready for retrieval.
-
-**Check**
-- `KB_ENABLED` setting.
-- `JINA_API_KEY`.
-- Qdrant/vector-store configuration.
-- Whether the index has been built successfully.
-
-A disabled knowledge base before the first index build or while required keys are missing can be expected; verify configuration before treating it as an application bug.
-
-### Problem: The widget does not load
-
-**Check**
-1. Open the backend's `/health` endpoint.
-2. Confirm that the script URL points to `/widget.js` on the correct backend host.
-3. Confirm the `data-api-url` attribute contains the backend base URL without a trailing slash.
-4. Open browser Developer Tools and inspect Console and Network errors.
-5. Check hosting logs if the script request returns 5xx.
 
 ---
 
@@ -493,6 +383,8 @@ A disabled knowledge base before the first index build or while required keys ar
 | `1013` | Try Again Later | Temporary overload; retry later. | Use exponential backoff and retry. |
 | `1014` | Bad Gateway | Invalid response from upstream. | Check upstream service, verify proxy configuration. |
 | `1015` | TLS Handshake Failed | TLS handshake failed at WebSocket level. | Check TLS certificate, proxy TLS configuration. |
+
+---
 
 ### gRPC Status Codes
 
@@ -520,36 +412,98 @@ gRPC uses its own status codes for RPC failures, returned in the status details:
 
 ---
 
-### LLM: knowledge_base_widget_not_found / widget script wrong
-**Meaning:** The embedded widget script could not be loaded or the API URL is wrong.
-**Fix:** Verify the script URL points to `/widget.js` on the correct backend host, check `data-api-url` attribute contains the backend base URL without a trailing slash, inspect Console and Network errors, check hosting logs.
+### Cloud Provider Errors
 
-### LLM: Knowledge Base Troubleshooting Quick Reference
+#### AWS (Amazon Web Services)
 
-| KB problem | What to check | Fix |
-|---|---|---|
-| Chatbot gives no KB answer | `GET /kb/status` returns `enabled=false`? | Rebuild index: `python3 -m scripts.rebuild_index` |
-| `POST /kb/rebuild` fails | Backend running? `x-kb-admin-token` header? | Check backend logs, verify Jina embedding + Qdrant config |
-| KB reports disabled | `KB_ENABLED`, `JINA_API_KEY`, Qdrant config? | Verify configuration before treating as app bug |
-| Widget does not load | Script URL, `data-api-url` without trailing slash? | Inspect Console/Network errors, check hosting logs |
+**Common AWS error types:** `InvalidParameter`, `UnauthorizedOperation`, `AccessDenied`, `NotFoundException`, `LimitExceeded`
+
+**AWS S3 errors**
+- `NoSuchBucket`: Verify bucket name/region, create bucket if missing, check app configuration.
+- `NoSuchKey`: Verify object key, list objects, check case sensitivity, verify upload key.
+- `AccessDenied`: Check bucket policy, IAM policy for `s3:GetObject`/`s3:PutObject`, check bucket ACL, check CORS if browser access.
+
+**AWS Lambda errors**
+- `InvalidParameterValueException`: Check error for invalid parameter, verify runtime version, adjust timeout/memory, verify execution role, check deployment package size (10 MB unzipped).
+- `TooManyRequestsException`: Check concurrency limit, reduce invocation rate or add jitter, request concurrency increase, use async invocation with backoff.
+
+**AWS DynamoDB errors**
+- `ProvisionedThroughputExceededException`: Check CloudWatch metrics, add auto-scaling or increase capacity, use on-demand for unpredictable workloads, distribute keys, implement backoff with jitter.
+- `ConditionalCheckFailedException`: Verify item exists and attribute value correct, check condition expression, use `Expected` carefully (case-sensitive), retry with fresh read for optimistic locking.
+
+**AWS API Gateway errors**
+- `4XX` / `Unauthorized` / `Access Denied`: Check authorization type (Lambda authorizer, IAM, Cognito, API key), verify token/secret, check IAM policy, verify request headers (`x-api-key`), check throttling settings.
+- `429` / `Too Many Requests`: Check throttling settings, check account-level limits, implement exponential backoff with jitter, use API keys with higher limits, prevent duplicate submissions.
+
+**AWS Cognito errors**
+- `NotAuthorizedException`: Verify password/username, check user is not blocked, verify token is not expired, use refresh token, check MFA status.
+- `TooManyRequestsException`: Reduce request rate, implement exponential backoff, check for duplicate auth requests, request rate limit increase, use token cache.
+
+**AWS general errors**
+- `InvalidParameter` / `InvalidParameterValue`: Read error for parameter name/constraint, verify against API docs, check for typos/missing fields, validate value format (ARN, date, region).
+- `UnauthorizedOperation`: Read denied action/resource, check IAM policy, verify role trust policy, verify resource ARN (region, account), test with `aws iam simulate-principal-policy`.
+- `AccessDenied`: Verify credentials (`aws sts get-caller-identity`), check IAM policy, check resource policy, verify credentials not expired/revoked, check temporary credentials.
+- `NotFoundException` / `Resource not found`: Verify resource ID/ARN, list resource (AWS console), check region/account, verify correct environment.
+
+#### GCP (Google Cloud Platform)
+
+**Common GCP error types:** `StorageException`, `PermissionDenied`, `QueryJobError`, `FirebaseAuthError`
+
+**GCP Cloud Storage errors**
+- `Not found` / `StorageException`: Verify bucket/object, list objects (`gsutil ls`), check case sensitivity, verify upload path.
+- `PermissionDenied`: Check IAM policy for bucket/object, verify service account has required role, check credentials scope, verify public access is not intended.
+
+**GCP BigQuery errors**
+- `QueryJobError` / `Query exceeded limit`: Check estimated bytes processed, use `LIMIT` or table scanner, use partition filters, request higher budget or on-demand, cache results.
+
+**GCP Firebase errors**
+- `The link is invalid or it has expired`: Verify link not expired (up to 30 days), check link parameters, regenerate link, check Firebase console for analytics.
+
+#### Azure (Microsoft Azure)
+
+**Common Azure error types:** `AuthenticationFailed`, `BlobNotFoundException`
+
+**Azure Blob Storage errors**
+- `The specified blob does not exist`: Verify container/blob names, list blobs (`az storage blob list`), check case sensitivity, verify upload path.
+- `AuthenticationFailed`: Verify connection string/account key, check credentials not expired/regenerated, verify account name, check service principal credentials/scope.
 
 ---
 
-## Safe Troubleshooting Rules
+### General Cloud Provider Troubleshooting
 
-|| Error code | Name | First thing to check |
-||---|---|---|
-|| 400 | Bad Request | Request body and required fields |
-|| 401 | Unauthorized | Token or authentication requirement |
-|| 403 | Forbidden | Permissions and security rules |
-|| 404 | Not Found | URL, route, and backend base URL |
-|| 408 | Request Timeout | Network and request duration |
-|| 413 | Payload Too Large | Request body size |
-|| 429 | Too Many Requests | Rate limit and retry policy |
-|| 500 | Internal Server Error | Backend logs and configuration |
-|| 502 | Bad Gateway | Backend process and proxy/upstream |
-|| 503 | Service Unavailable | Service health and dependencies |
-|| 504 | Gateway Timeout | Upstream response time and timeout settings |
+**1. Authentication / Authorization**
+- Verify credentials are set and non-empty.
+- Check credentials are not expired or revoked.
+- Verify the correct IAM role/service account is attached.
+- Check the resource ARN, region, and account match.
+
+**2. Permissions / Policy**
+- Read the exact denied action/resource from the error.
+- Check IAM policy for Allow vs Deny effects.
+- Verify the service account or role has the minimum required permission (least privilege).
+- Test with `aws iam simulate-principal-policy` (AWS) or `gcloud auth` (GCP).
+
+**3. Rate Limits**
+- Most cloud providers return `429` or `TooManyRequestsException`.
+- Implement exponential backoff with jitter.
+- Use API keys with higher limits if available.
+- Check account-level limits in the provider console.
+
+**4. Quota / Limit Exceedance**
+- Read the error for the specific limit exceeded.
+- Request quota increase via the provider's service quota console.
+- Reduce request rate or use multiple resources (auto-scaling).
+
+**5. Region / Availability Zone**
+- Verify the resource is in the correct region and account.
+- Check cross-region access restrictions.
+- Ensure the service is running in the expected availability zone.
+
+**6. Network / Firewall**
+- Verify security groups, firewall rules, and network ACLs allow traffic.
+- Check outbound internet access for API calls.
+- Verify VPC endpoints or NAT gateway configuration.
+- Test connectivity from the instance to the provider API endpoint.
 
 ---
 

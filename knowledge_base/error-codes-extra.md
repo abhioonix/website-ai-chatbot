@@ -28,30 +28,35 @@ This document covers HTTP status codes not already in `backend-http.md` (codes 1
 **Use case:** Link headers for preloading resources.
 **Fix:** Include `Link` headers with `<rel=preload>` info and continue processing.
 
-### 200 OK
-**Meaning:** The request succeeded.
-**Common causes of failure:** Client sent wrong method, missing required fields, wrong content type.
-**Fix:** Verify the request method, required fields, and `Content-Type: application/json`.
-
-### 201 Created
-**Meaning:** The request succeeded and a new resource was created.
-**Common causes of failure:** Client tried to create a duplicate, missing required fields for creation.
-**Fix:** Check for duplicate records, verify required creation fields, use a unique identifier.
-
-### 202 Accepted
-**Meaning:** The request was accepted for processing, but not yet complete.
-**Use case:** Async task creation, background job submission.
-**Fix:** Return a `Location` header pointing to the job status endpoint, or include a `task_id` in the response.
+### 203 Non-Authoritative Information
+**Meaning:** The server is a transforming proxy that returned a modified version of the requested resource.
+**Fix:** Verify the proxy configuration and caching headers.
 
 ### 204 No Content
 **Meaning:** The request succeeded but there is no content to return.
 **Use case:** DELETE request, successful form submission.
-**Fix:** Return `204 No Content` with no body; don't return a body on 204.
+**Fix:** Return `204 No Content` with no body.
+
+### 205 Reset Content
+**Meaning:** The server successfully processed the request and the user agent should reset the document view.
+**Fix:** Clear the form or UI state as appropriate.
 
 ### 206 Partial Content
 **Meaning:** The server is delivering only part of the resource (byte range).
 **Use case:** Range requests for large files or media.
 **Fix:** Verify the `Range` header, return `Content-Range` header, support `Accept-Ranges: bytes`.
+
+### 207 Multi-Status
+**Meaning:** The message body contains multiple status codes (WebDAV).
+**Fix:** Parse the XML response body for individual status codes.
+
+### 208 Already Reported
+**Meaning:** The members of a DAV binding have already been enumerated in a preceding response.
+**Fix:** Use in multi-status responses; do not re-enumerate.
+
+### 226 IM Used
+**Meaning:** The server has fulfilled a GET request for the resource, and the response is a representation of the result of one or more instance manipulations applied to the current instance.
+**Fix:** Return the modified representation with appropriate headers.
 
 ### 300 Multiple Choices
 **Meaning:** The requested resource has multiple representations.
@@ -73,6 +78,14 @@ This document covers HTTP status codes not already in `backend-http.md` (codes 1
 **Meaning:** The resource has not been modified since the last request (conditional GET).
 **Fix:** Return only headers (no body), set `Last-Modified` and `ETag` correctly.
 
+### 305 Use Proxy
+**Meaning:** The requested resource must be accessed through a proxy.
+**Fix:** The server should send a `Location` header with the proxy URL.
+
+### 306 Unused
+**Meaning:** This status code is no longer used in official HTTP specifications.
+**Fix:** Do not rely on it; use `307` or `308` instead.
+
 ### 307 Temporary Redirect
 **Meaning:** The resource is temporarily at a different URI; the method must not change.
 **Fix:** Send `Location` header, keep the same HTTP method, don't convert POST to GET.
@@ -81,9 +94,49 @@ This document covers HTTP status codes not already in `backend-http.md` (codes 1
 **Meaning:** The resource has been permanently moved; the method must not change.
 **Fix:** Send `Location` header, keep the same HTTP method, update clients to use the new URI.
 
+### 400 Bad Request
+**Meaning:** The request is malformed or invalid.
+**Fix:** Validate request syntax, parameters, and JSON formatting.
+
+### 401 Unauthorized
+**Meaning:** Authentication is required and has failed or not been provided.
+**Fix:** Provide `Authorization: Bearer` header, check token expiry, rotate keys if needed.
+
 ### 402 Payment Required
 **Meaning:** Reserved for future use (often used for payment walls).
-**How to troubleshoot:** If the service is behind a payment wall, check subscription status, upgrade plan.
+**Fix:** If the service is behind a payment wall, check subscription status, upgrade plan.
+
+### 403 Forbidden
+**Meaning:** The server understood the request but refuses to authorize it.
+**Fix:** Check roles, permissions, scopes, and route guards. Do not disable security controls as a first fix.
+
+### 404 Not Found
+**Meaning:** The requested resource does not exist.
+**Fix:** Verify the URL, route registration, and resource ID.
+
+### 405 Method Not Allowed
+**Meaning:** The HTTP method is not supported for this resource.
+**Fix:** Configure allowed methods on the route (e.g., `allow_methods=["GET", "POST"]`).
+
+### 406 Not Acceptable
+**Meaning:** The server cannot produce a response matching the `Accept` headers.
+**Fix:** Check the `Accept` header and supported response formats.
+
+### 407 Proxy Authentication Required
+**Meaning:** The client must authenticate itself with the proxy.
+**Fix:** Provide proxy credentials, configure proxy authentication.
+
+### 408 Request Timeout
+**Meaning:** The request took too long and timed out.
+**Fix:** Check network, backend logs, timeout settings, avoid rapid retries.
+
+### 409 Conflict
+**Meaning:** The request conflicts with the current resource state.
+**Fix:** Check for duplicate records, use unique constraints, return clear error message.
+
+### 410 Gone
+**Meaning:** The resource has been permanently removed.
+**Fix:** Update clients to use the replacement route, document deprecation.
 
 ### 411 Length Required
 **Meaning:** The server refuses to accept the request without a `Content-Length` header.
@@ -93,21 +146,45 @@ This document covers HTTP status codes not already in `backend-http.md` (codes 1
 **Meaning:** A precondition in the request headers failed (e.g., `If-Match`, `If-None-Match`).
 **Fix:** Check the `If-Match` or `If-None-Match` header values, verify the resource version/ETag.
 
+### 413 Payload Too Large
+**Meaning:** The request body exceeds the server's limit.
+**Fix:** Reduce body size, send only needed data, check server/proxy limits.
+
 ### 414 URI Too Long
 **Meaning:** The request URI is too long.
 **Fix:** Use POST instead of GET for large payloads, shorten query parameters, URL-encode and chunk.
 
+### 415 Unsupported Media Type
+**Meaning:** The `Content-Type` is not supported.
+**Fix:** Send the expected `Content-Type` header (e.g., `application/json`).
+
+### 416 Range Not Satisfiable
+**Meaning:** The `Range` header is invalid or out of bounds.
+**Fix:** Check the `Range` header against the resource size, handle gracefully.
+
 ### 417 Expectation Failed
 **Meaning:** The `Expect` header could not be met.
-**Fix:** Check the `Expect` header value, if using `100-continue`, verify server handles it.
+**Fix:** Check the `Expect` header value, verify server handles it.
 
-### 418 I'm a teapot
+### 418 I'm a Teapot
 **Meaning:** An Easter egg (RFC 2324). The server refuses to brew coffee.
-**How to troubleshoot:** This is not a real error; ignore it.
+**Fix:** This is not a real error; ignore it.
+
+### 419
+**Meaning:** Not a standard HTTP status; sometimes used by frameworks (e.g., Laravel CSRF).
+**Fix:** Check the framework's CSRF protection documentation.
 
 ### 420 Method Failure
 **Meaning:** Deprecated (Internet Explorer 10). Use 405 Method Not Allowed instead.
-**How to troubleshoot:** Replace with 405 in your API.
+**Fix:** Replace with 405 in your API.
+
+### 420
+**Meaning:** Not a standard HTTP status; sometimes used by APIs (e.g., Twitter rate limiting).
+**Fix:** Check the API documentation; often maps to 429 Too Many Requests.
+
+### 421 Misdirected Request
+**Meaning:** The request was directed at a server that cannot produce a response.
+**Fix:** Verify the request was sent to the correct server/host.
 
 ### 422 Unprocessable Entity
 **Meaning:** The request entity is well-formed but semantically incorrect (validation errors).
@@ -117,6 +194,10 @@ This document covers HTTP status codes not already in `backend-http.md` (codes 1
 **Meaning:** The resource is locked (WebDAV).
 **Fix:** Check lock tokens, re-acquire lock if needed, or use `Lock-Token` header.
 
+### 424 Failed Dependency
+**Meaning:** The request failed because a dependent operation failed.
+**Fix:** Inspect downstream service, return useful error, retry only for transient failures.
+
 ### 425 Too Early
 **Meaning:** The server does not want to process the request risk of replay.
 **Fix:** Retry after a short delay, or verify the request wasn't replayed.
@@ -125,21 +206,65 @@ This document covers HTTP status codes not already in `backend-http.md` (codes 1
 **Meaning:** The client must upgrade to a different protocol.
 **Fix:** Respond with `Upgrade` header indicating the required protocol.
 
+### 427
+**Meaning:** Not a standard HTTP status.
+**Fix:** Do not rely on it; check API documentation.
+
 ### 428 Precondition Required
 **Meaning:** The server requires a precondition header (e.g., `If-Match`).
 **Fix:** Add the required precondition header, or use `If-Match`/`If-None-Match`.
+
+### 429 Too Many Requests
+**Meaning:** The client has exceeded the rate limit.
+**Fix:** Wait before retrying, check for `Retry-After` header, use exponential backoff.
+
+### 430
+**Meaning:** Not a standard HTTP status; sometimes used by APIs (e.g., Shopify rate limiting).
+**Fix:** Check the API documentation; often maps to 429 Too Many Requests.
 
 ### 431 Request Header Fields Too Large
 **Meaning:** The server refuses the request because headers are too large.
 **Fix:** Reduce header size, remove non-essential headers, split into multiple requests.
 
-### 450 Windows: Blocked by Parental Controls
-**Meaning:** A Windows-specific error (Microsoft).
-**How to troubleshoot:** This is Windows-specific; not applicable to backend services.
+### 440
+**Meaning:** Not a standard HTTP status; sometimes used by Microsoft (Internet Explorer).
+**Fix:** Check the API documentation or framework documentation.
+
+### 444
+**Meaning:** Not a standard HTTP status; used by Nginx to close the connection without a response.
+**Fix:** Remove the offending request; check proxy/load balancer configuration.
+
+### 449
+**Meaning:** Not a standard HTTP status; used by Microsoft for retry with action.
+**Fix:** Check the documentation; often used for retry-after-action scenarios.
+
+### 450
+**Meaning:** The Windows parent platform blocked access.
+**Fix:** This is Windows-specific; not applicable to backend services.
 
 ### 451 Unavailable For Legal Reasons
 **Meaning:** The resource is unavailable due to legal restrictions.
 **Fix:** Return 451 with a legal reason reference, or contact the service provider.
+
+### 500 Internal Server Error
+**Meaning:** An unexpected server-side failure occurred.
+**Fix:** Check backend logs, verify env vars, reproduce with same request/body.
+
+### 501 Not Implemented
+**Meaning:** The server does not support the functionality required.
+**Fix:** Check if the feature is implemented, upgrade the server, or use a supported endpoint.
+
+### 502 Bad Gateway
+**Meaning:** The proxy/gateway received an invalid response from upstream.
+**Fix:** Verify upstream service is running, check proxy configuration, check backend logs.
+
+### 503 Service Unavailable
+**Meaning:** The service is temporarily unable to handle requests.
+**Fix:** Check service health, deployment status, capacity, retry after delay.
+
+### 504 Gateway Timeout
+**Meaning:** The proxy/gateway did not receive a response in time.
+**Fix:** Review timeout settings, check upstream latency, identify slow component.
 
 ### 505 HTTP Version Not Supported
 **Meaning:** The server does not support the HTTP version used in the request.
@@ -147,14 +272,14 @@ This document covers HTTP status codes not already in `backend-http.md` (codes 1
 
 ### 506 Variant Also Negotiates
 **Meaning:** The server has an internal configuration error (transparent content negotiation).
-**How to troubleshoot:** This is a server misconfiguration; fix the content negotiation setup.
+**Fix:** This is a server misconfiguration; fix the content negotiation setup.
 
 ### 507 Insufficient Storage
 **Meaning:** The server cannot store the representation (WebDAV).
 **Fix:** Check disk space, free up storage, increase storage quota.
 
 ### 508 Loop Detected
-**Meaning:** The server detected an infinite loop (WebDAV).
+**Meaning:** The server detected an infinite loop.
 **Fix:** Check for nested or circular references, increase loop detection limits.
 
 ### 509 Bandwidth Limit Exceeded
@@ -162,7 +287,7 @@ This document covers HTTP status codes not already in `backend-http.md` (codes 1
 **Fix:** Check bandwidth usage, upgrade the plan, implement bandwidth capping.
 
 ### 510 Not Extended
-**Meaning:** The resource requires further extensions (WebDAV).
+**Meaning:** The resource requires further extensions.
 **Fix:** Implement the required extensions, or use a different endpoint.
 
 ### 511 Network Authentication Required

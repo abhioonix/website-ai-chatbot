@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is a consolidated reference for backend error codes across categories: HTTP status codes, network/protocol, server/OS, database/storage, queue/worker, AI/LLM/provider, cloud (AWS/GCP/Azure), mobile/web, and infrastructure/security. It complements `backend-http.md` (HTTP status codes) and `backend-ops.md` (deployment/DevOps).
+This document is a consolidated reference for backend error codes across categories: HTTP status codes, network/protocol, server/OS, database/storage, queue/worker, AI/LLM/provider, cloud (AWS/GCP/Azure), mobile/web, and infrastructure/security. It is a general-purpose reference for any backend application.
 
 Use this as the single source of truth for error-code troubleshooting. Categorize any error into one of the sections below.
 
@@ -13,22 +13,22 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 ### 400 — Bad Request
 **Meaning:** The server cannot process the request because the request data is invalid or malformed.
 **Common causes:** JSON body malformed, missing required field, wrong data type, unsupported request format.
-**How to troubleshoot:** Validate JSON, confirm `message` is a string, check `history` format, read the error message and correct the request.
+**How to troubleshoot:** Validate JSON, confirm required fields, check data types, read the error message and correct the request.
 
 ### 401 — Unauthorized
 **Meaning:** Authentication required but missing, invalid, or expired.
-**Common causes:** Protected endpoint requires token, admin token missing/incorrect, env var not configured.
-**How to troubleshoot:** Check auth requirement, verify `KB_ADMIN_TOKEN` for rebuild, send `x-kb-admin-token` header, never commit tokens to Git.
+**Common causes:** Protected endpoint requires token, admin token missing/incorrect, API key invalid/expired.
+**How to troubleshoot:** Check auth requirement, verify token/API key format, check token expiry, verify credentials not expired/revoked, never commit tokens to Git.
 
 ### 403 — Forbidden
 **Meaning:** Server understood request but refuses to allow it.
-**Common causes:** Valid credentials but no permission, hosting/security rule, proxy/platform policy.
-**How to troubleshoot:** Check RBAC, scopes, route guards, security logs. Do not disable security controls as a first fix.
+**Common causes:** Valid credentials but no permission, RBAC/scope rules, hosting/security policy.
+**How to troubleshoot:** Check RBAC, scopes, resource ownership, route guards, security logs. Do not disable security controls as a first fix.
 
 ### 404 — Not Found
 **Meaning:** Requested route or resource does not exist.
 **Common causes:** URL/route path misspelled, wrong backend base URL, stale deployment, wrong host/path.
-**How to troubleshoot:** Verify base URL and route path, check documented routes (`/health`, `/widget.js`, `/kb/status`, `/kb/rebuild`, `/api/chat`), check deployment logs.
+**How to troubleshoot:** Verify base URL and route path, check documented routes, check deployment logs.
 
 ### 405 — Method Not Allowed
 **Meaning:** URL exists but endpoint does not support the HTTP method used.
@@ -40,8 +40,8 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 
 ### 408 — Request Timeout
 **Meaning:** The request took too long and timed out.
-**Common causes:** Slow network, busy backend, upstream AI provider slow.
-**How to troubleshoot:** Retry once after checking network, check backend logs, review `LLM_TIMEOUT_SECONDS` (default 30s), avoid rapid retries.
+**Common causes:** Slow network, busy backend, upstream service slow.
+**How to troubleshoot:** Retry once after checking network, check backend logs, review timeout settings, avoid rapid retries, identify the slow component first.
 
 ### 409 — Conflict
 **Meaning:** Request conflicts with current resource state (e.g., duplicate record).
@@ -53,8 +53,8 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 
 ### 413 — Payload Too Large
 **Meaning:** Request body exceeds server/intermediary limit.
-**Common causes:** Unusually large request, long chat history, proxy/platform limit.
-**How to troubleshoot:** Reduce body size, send only needed history, check server/proxy limits, ensure request below 10 MB guard.
+**Common causes:** Unusually large request, long history, proxy/platform limit.
+**How to troubleshoot:** Reduce body size, send only needed history, check server/proxy/platform limits.
 
 ### 415 — Unsupported Media Type
 **Meaning:** Content-Type not supported by the endpoint.
@@ -81,21 +81,32 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 ### 502 — Bad Gateway
 **Meaning:** Gateway/proxy received invalid response from backend/upstream.
 **Common causes:** Backend down/restarting, wrong proxy port, upstream crash.
-**How to troubleshoot:** Verify backend running, test `GET /health`, review logs, verify upstream address/port, check if backend host or external provider caused it.
+**How to troubleshoot:** Verify backend running, test health endpoint, review logs, verify upstream address/port, check if backend host or external provider caused it.
 
 ### 503 — Service Unavailable
-**Meaning:** Service temporarily unable to handle requests.
-**Common causes:** Restarting/overloaded/suspended, upstream dependency down, service not ready.
-**How to troubleshoot:** Check service status, call `GET /health` and inspect reported status, verify LLM/KB config, review logs, retry after delay with backoff.
+**Meaning:** The service is temporarily unable to handle requests, but is expected to become available after some delay.
+**Common causes:**
+- **Backend/service-side:** Restarting, crashed, crash loop, hosting platform suspended, overloaded, memory exhaustion, missing env vars, startup failure.
+- **External dependencies:** LLM provider unavailable, vector store down, database unreachable, API key missing/invalid.
+- **Upstream/proxy:** Proxy could not reach backend, backend returned invalid response, proxy timeout too short.
+- **Deploy/startup:** Missing env vars, crash loop, waiting for unready service.
+**How to troubleshoot:**
+1. Check backend logs for the exact error.
+2. Call the health endpoint and inspect reported status.
+3. Verify external dependencies (LLM provider, vector store, database, API keys).
+4. Check hosting platform for service state (paused, sleeping, crashed).
+5. Check rate limiting and provider dashboards.
+6. Retry after a delay with exponential backoff.
+**Platform-specific causes:**
+- **Free tier sleeping:** Free dynos sleep after inactivity; brief 503 when woken.
+- **Build fails:** Service may not start, causing 503 on first request.
+- **Resource limits:** Memory limits may cause crashes under load.
+- **Route misconfiguration:** Proxy points to wrong port/host.
 
 ### 504 — Gateway Timeout
 **Meaning:** Gateway/proxy did not receive response from backend/upstream in time.
 **Common causes:** AI-provider slow, backend waiting on network call, short proxy timeout.
 **How to troubleshoot:** Check backend logs, review timeouts, check AI provider status, retry safely after delay, identify the slow component first.
-
-### WebSocket Issues
-**Cause:** WebSocket route not working or disconnects.
-**Fix:** Define route with `@app.websocket("/ws")`, accept with `await websocket.accept()`, handle `WebSocketDisconnect`, check proxy config.
 
 ---
 
@@ -123,7 +134,7 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 
 ### Connection refused (TCP-level)
 **Meaning:** Remote end actively refused connection (nothing listening on that port).
-**Fix:** Verify service is running, check listening address (`ss -tlnp`), for Docker use container/service name as host, verify connection string.
+**Fix:** Verify service is running, check listening address, for Docker use container/service name as host, verify connection string.
 
 ### HTTP/2 PROTOCOL_ERROR
 **Meaning:** HTTP/2 frame malformed or stream in invalid state.
@@ -135,7 +146,7 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 
 ### HTTP/3 / QUIC errors
 **Meaning:** QUIC/HTTP/3 connection failed.
-**Fix:** Verify server HTTP/3 enabled, check UDP is not blocked (`nc -vz -u <host> 443`), verify ALPN includes `h3`, test with HTTP/2 fallback.
+**Fix:** Verify server HTTP/3 enabled, check UDP is not blocked, verify ALPN includes `h3`, test with HTTP/2 fallback.
 
 ### SSL handshake failed
 **Meaning:** TLS handshake did not complete.
@@ -179,7 +190,7 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 
 ### `ENOENT` / "No such file or directory"
 **Meaning:** Path does not exist or was deleted.
-**Fix:** Verify path correct (typos, relative-vs-absolute), confirm file exists and process has read access, for KB docs confirm path inside `knowledge_base/` and index rebuilt.
+**Fix:** Verify path correct (typos, relative-vs-absolute), confirm file exists and process has read access, check configuration.
 
 ### `ENOTDIR` / "Not a directory"
 **Meaning:** Path expected to be a directory is actually a file (or vice versa).
@@ -225,19 +236,19 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 **Fix:** List DBs (`psql -l`), create if missing (`createdb`), verify connection string database name.
 
 ### PostgreSQL: "password authentication failed for user"
-**Fix:** Verify password, recreate user with correct password (`CREATE USER app_user WITH PASSWORD ...`), grant privileges (`GRANT ALL PRIVILEGES ON DATABASE appdb TO app_user;`), URL-encode special chars.
+**Fix:** Verify password, recreate user with correct password, grant privileges, URL-encode special chars.
 
 ### PostgreSQL: "role does not exist"
-**Fix:** List roles, create role (`createuser --pwprompt app_user`), grant to database.
+**Fix:** List roles, create role, grant to database.
 
 ### PostgreSQL: "permission denied for schema public"
-**Fix:** Grant usage (`GRANT USAGE ON SCHEMA public TO app_user;`), create if needed, grant table-level privs.
+**Fix:** Grant usage on schema, grant table-level privs.
 
 ### PostgreSQL: "relation does not exist"
-**Fix:** List tables (`\dt`), run pending migrations (`alembic upgrade head`), check table name spelling/case.
+**Fix:** List tables, run pending migrations, check table name spelling/case.
 
 ### PostgreSQL: "column does not exist"
-**Fix:** Inspect schema (`\d <table_name>`), check migration, verify column spelling/case.
+**Fix:** Inspect schema, check migration, verify column spelling/case.
 
 ### PostgreSQL: "duplicate key value violates unique constraint"
 **Fix:** Check unique constraint, query for duplicates, use `INSERT ... ON CONFLICT` (upsert), make jobs idempotent.
@@ -246,13 +257,13 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 **Fix:** Read deadlock report, keep transactions short, acquire locks in same order, retry with backoff, add indexes.
 
 ### PostgreSQL: "too many connections"
-**Fix:** Check connection count (`SELECT count(*) FROM pg_stat_activity;`), verify sessions closed, increase DB limit, implement connection pooling.
+**Fix:** Check connection count, verify sessions closed, increase DB limit, implement connection pooling.
 
 ### PostgreSQL: SSL/TLS errors
 **Fix:** Verify certificate, check `sslmode` (require, verify-full), for local dev use `sslmode=disable` with approval, ensure full chain.
 
 ### MySQL: "Access denied for user"
-**Fix:** Verify credentials, create user (`CREATE USER 'app_user'@'%' IDENTIFIED BY 'password'`), grant (`GRANT ALL ON appdb.* TO 'app_user'@'%';`), flush privileges.
+**Fix:** Verify credentials, create user with correct password, grant privileges, flush privileges.
 
 ### MySQL: "Table doesn't exist" / "Unknown database"
 **Fix:** List tables/databases, run migrations, verify connection string.
@@ -276,7 +287,7 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 **Fix:** Verify bucket/object, check IAM, verify region/account, ensure correct credentials.
 
 ### Connection pool exhausted
-**Fix:** Check open connections (`SELECT count(*) FROM pg_stat_activity;`), ensure sessions closed (context managers, `yield` dependencies), increase pool size if workload genuinely high, fix leaks.
+**Fix:** Check open connections, ensure sessions closed (context managers, `yield` dependencies), increase pool size if workload genuinely high, fix leaks.
 
 ### Connection string verification
 **Fix:** Break string into components, URL-encode special chars, test with client tool, verify protocol (`postgresql://`, `mysql://`, `redis://`).
@@ -295,13 +306,13 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 **Fix:** Verify queue exists, check virtual host, ensure producer declared queue before publishing.
 
 ### Kafka: "UNKNOWN_TOPIC_OR_PARTITION"
-**Fix:** Create topic (`kafka-topics --create --topic <name> --partitions 3 --replication-factor 1 --bootstrap-server <host>:9092`), verify topic exists, check bootstrap server/credentials.
+**Fix:** Create topic, verify topic exists, check bootstrap server/credentials.
 
 ### Kafka: "OFFSET_OUT_OF_RANGE"
 **Fix:** Check offset checkpoint, set `auto.offset.reset=earliest`, request earliest offset, verify log retention.
 
 ### Kafka: "CONSUMER_TIMEOUT_REACHED"
-**Fix:** Check consumer group status, verify messages produced (`kafka-console-consumer --from-beginning`), check broker load, increase poll timeout.
+**Fix:** Check consumer group status, verify messages produced, check broker load, increase poll timeout.
 
 ### SQS: "MessageNotInflight"
 **Fix:** Increase visibility timeout, make workers idempotent, check consumer logs, verify redrive policy for poison messages.
@@ -319,9 +330,8 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 **Fix:** Check task retry settings, verify delay appropriate, ensure exception truly transient, set max retry count, log retry count.
 
 ### General queue errors
-**Consumer lag:** Monitor queue depth, check worker errors, scale consumers, alert on lag thresholds.
-
-**Poison message repeatedly fails:** Limit retries, record failure reason, route to dead-letter queue, track DLQ counters.
+- **Consumer lag:** Monitor queue depth, check worker errors, scale consumers, alert on lag thresholds.
+- **Poison message repeatedly fails:** Limit retries, record failure reason, route to dead-letter queue, track DLQ counters.
 
 ---
 
@@ -331,7 +341,7 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 **Fix:** Check `Retry-After` header, use exponential backoff with jitter, check provider dashboard for quota, spread requests, debounce rapid frontend input.
 
 ### LLM: "timeout" / "Request timed out"
-**Fix:** Review `LLM_TIMEOUT_SECONDS` (default 30s), check provider status, check latency distribution, for long prompts use higher timeout or smaller model, return friendly retry message.
+**Fix:** Review timeout settings (configurable per provider), check provider status, check latency distribution, for long prompts use higher timeout or smaller model, return friendly retry message.
 
 ### LLM: "invalid_api_key" / "Incorrect API key"
 **Fix:** Verify env var is set and non-empty, check key format, test with SDK/curl, rotate key if exposed.
@@ -342,95 +352,104 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 ### LLM: "context_length" / "max context length"
 **Fix:** Truncate/compress chat history, remove irrelevant older messages, reduce system prompt, set max context size.
 
-### Jina embedding API: "401" / "Invalid API key"
-**Fix:** Verify `JINA_API_KEY` is set and non-empty, test key directly, note `setdefault` won't overwrite existing env vars.
+### LLM: "service_unavailable"
+**Fix:** Retry with exponential backoff, check provider status page, verify model is deployed/available, switch to a different model or fallback endpoint.
 
-### Jina embedding API: "429" / "Rate limit exceeded"
-**Fix:** Check `Retry-After`, implement backoff/retry, check Jina rate limits, consider higher-tier plan.
+### Vector store: "connection refused" / "No healthy nodes"
+**Fix:** Verify vector store running, test health endpoint, for Docker use container name as host, check vector store logs.
 
-### Qdrant: "connection refused" / "No healthy nodes"
-**Fix:** Verify Qdrant running, test `/health`, for Docker use container name as host, check Qdrant logs.
-
-### Qdrant: "503" / "Service Unavailable"
-**Fix:** Check health endpoint, check host resource usage, review Qdrant logs, retry with backoff (not permanent failure).
+### Vector store: "503" / "Service Unavailable"
+**Fix:** Check health endpoint, check host resource usage, review vector store logs, retry with backoff (not permanent failure).
 
 ### General provider errors
-**429 Too Many Requests:** Wait, check `Retry-After`, prevent duplicate submissions, use exponential backoff.
-
-**502 Bad Gateway (upstream API):** Check status code/content-type before parsing, validate response against schema, log request ID, check provider status page.
-
-**504 Gateway Timeout (upstream API):** Check backend logs, review `LLM_TIMEOUT_SECONDS`, check AI provider status, retry safely after delay, identify slow component.
+- **429 Too Many Requests:** Wait, check `Retry-After`, prevent duplicate submissions, use exponential backoff.
+- **502 Bad Gateway (upstream API):** Check status code/content-type before parsing, validate response against schema, log request ID, check provider status page.
+- **504 Gateway Timeout (upstream API):** Check backend logs, review timeout settings, check AI provider status, retry safely after delay, identify slow component.
 
 ---
 
 ## 7. Cloud Provider Errors (AWS / GCP / Azure)
 
-### AWS: "InvalidParameter" / "InvalidParameterValue"
-**Fix:** Read error for parameter name/constraint, verify against API docs, check for typos/missing fields, validate value format (ARN, date, region).
+### AWS (Amazon Web Services)
 
-### AWS: "UnauthorizedOperation"
-**Fix:** Read denied action/resource, check IAM policy, verify role trust policy, verify resource ARN (region, account), test with `aws iam simulate-principal-policy`.
+**Common AWS error types:** `InvalidParameter`, `UnauthorizedOperation`, `AccessDenied`, `NotFoundException`, `LimitExceeded`
 
-### AWS: "AccessDenied"
-**Fix:** Verify credentials (`aws sts get-caller-identity`), check IAM policy, check resource policy, verify credentials not expired/revoked, check temporary credentials.
+**AWS S3 errors**
+- `NoSuchBucket`: Verify bucket name/region, create bucket if missing, check app configuration.
+- `NoSuchKey`: Verify object key, list objects, check case sensitivity, verify upload key.
+- `AccessDenied`: Check bucket policy, IAM policy for `s3:GetObject`/`s3:PutObject`, check bucket ACL, check CORS if browser access.
 
-### AWS: "NotFoundException" / "Resource not found"
-**Fix:** Verify resource ID/ARN, list resource (AWS console), check region/account, verify correct environment.
+**AWS Lambda errors**
+- `InvalidParameterValueException`: Check error for invalid parameter, verify runtime version, adjust timeout/memory, verify execution role, check deployment package size (10 MB unzipped).
+- `TooManyRequestsException`: Check concurrency limit, reduce invocation rate or add jitter, request concurrency increase, use async invocation with backoff.
 
-### AWS: "LimitExceeded"
-**Fix:** Read error for specific limit, request quota increase via AWS service quota console, reduce request rate, use auto-scaling/multiple resources.
+**AWS DynamoDB errors**
+- `ProvisionedThroughputExceededException`: Check CloudWatch metrics, add auto-scaling or increase capacity, use on-demand for unpredictable workloads, distribute keys, implement backoff with jitter.
+- `ConditionalCheckFailedException`: Verify item exists and attribute value correct, check condition expression, use `Expected` carefully (case-sensitive), retry with fresh read for optimistic locking.
 
-### AWS S3: "NoSuchBucket" / "NoSuchKey" / "AccessDenied"
-**Fix:** Verify bucket name/region, list objects, check case sensitivity, check bucket policy/IAM for `s3:GetObject`/`s3:PutObject`, check CORS for browser access.
+**AWS API Gateway errors**
+- `4XX` / `Unauthorized` / `Access Denied`: Check authorization type (Lambda authorizer, IAM, Cognito, API key), verify token/secret, check IAM policy, verify request headers (`x-api-key`), check throttling settings.
+- `429` / `Too Many Requests`: Check throttling settings, check account-level limits, implement exponential backoff with jitter, use API keys with higher limits, prevent duplicate submissions.
 
-### AWS Lambda: "InvalidParameterValueException"
-**Fix:** Check error for invalid parameter, verify runtime version, adjust timeout/memory, verify execution role, check deployment package size (10 MB unzipped).
+**AWS Cognito errors**
+- `NotAuthorizedException`: Verify password/username, check user blocked, verify token not expired, use refresh token, check MFA status.
+- `TooManyRequestsException`: Reduce request rate, implement exponential backoff, check for duplicate auth requests, request rate limit increase, use token cache.
 
-### AWS Lambda: "TooManyRequestsException"
-**Fix:** Check concurrency limit, reduce invocation rate or add jitter, request concurrency increase, use async invocation with backoff.
+**AWS general errors**
+- `InvalidParameter` / `InvalidParameterValue`: Read error for parameter name/constraint, verify against API docs, check for typos/missing fields, validate value format (ARN, date, region).
+- `UnauthorizedOperation`: Read denied action/resource, check IAM policy, verify role trust policy, verify resource ARN (region, account), test with `aws iam simulate-principal-policy`.
+- `AccessDenied`: Verify credentials (`aws sts get-caller-identity`), check IAM policy, check resource policy, verify credentials not expired/revoked, check temporary credentials.
+- `NotFoundException` / `Resource not found`: Verify resource ID/ARN, list resource (AWS console), check region/account, verify correct environment.
 
-### AWS DynamoDB: "ProvisionedThroughputExceededException"
-**Fix:** Check CloudWatch metrics, add auto-scaling or increase capacity, use on-demand for unpredictable workloads, distribute keys (composite keys), implement backoff with jitter.
+### GCP (Google Cloud Platform)
 
-### AWS DynamoDB: "ConditionalCheckFailedException"
-**Fix:** Verify item exists and attribute value correct, check condition expression, use `Expected` carefully (case-sensitive), retry with fresh read for optimistic locking.
+**Common GCP error types:** `StorageException`, `PermissionDenied`, `QueryJobError`, `FirebaseAuthError`
 
-### AWS API Gateway: "4XX" / "Unauthorized" / "Access Denied"
-**Fix:** Check authorization type (Lambda authorizer, IAM, Cognito, API key), verify token/secret, check IAM policy, verify request headers (`x-api-key`), check throttling settings.
+**GCP Cloud Storage errors**
+- `Not found` / `StorageException`: Verify bucket/object, list objects (`gsutil ls`), check case sensitivity, verify upload path.
+- `PermissionDenied`: Check IAM policy for bucket/object, verify service account has required role, check credentials scope, verify public access is not intended.
 
-### AWS API Gateway: "429" / "Too Many Requests"
-**Fix:** Check throttling settings, check account-level limits, implement exponential backoff with jitter, use API keys with higher limits, prevent duplicate submissions.
+**GCP BigQuery errors**
+- `QueryJobError` / `Query exceeded limit`: Check estimated bytes processed, use `LIMIT` or table scanner, use partition filters, request higher budget or on-demand, cache results.
 
-### AWS Cognito: "NotAuthorizedException"
-**Fix:** Verify password/username, check user blocked, verify token not expired, use refresh token, check MFA status.
+**GCP Firebase errors**
+- `The link is invalid or it has expired`: Verify link not expired (up to 30 days), check link parameters, regenerate link, check Firebase console for analytics.
 
-### AWS Cognito: "TooManyRequestsException"
-**Fix:** Reduce request rate, implement exponential backoff, check for duplicate auth requests, request rate limit increase, use token cache.
+### Azure (Microsoft Azure)
 
-### GCP: "StorageException" / "Not found" (Cloud Storage)
-**Fix:** Verify bucket/object, list objects (`gsutil ls`), check case sensitivity, verify upload path.
+**Common Azure error types:** `AuthenticationFailed`, `BlobNotFoundException`
 
-### GCP: "PermissionDenied" (GCS)
-**Fix:** Check IAM policy for bucket/object, verify service account has required role, check credentials scope, verify public access is not intended.
+**Azure Blob Storage errors**
+- `The specified blob does not exist`: Verify container/blob names, list blobs (`az storage blob list`), check case sensitivity, verify upload path.
+- `AuthenticationFailed`: Verify connection string/account key, check credentials not expired/regenerated, verify account name, check service principal credentials/scope.
 
-### GCP BigQuery: "QueryJobError" / "Query exceeded limit"
-**Fix:** Check estimated bytes processed, use `LIMIT` or table scanner, use partition filters, request higher budget or on-demand, cache results.
+**Azure general errors**
+- `AuthenticationFailed`: Verify connection string/account key, check credentials not expired/regenerated, verify account name, check service principal credentials/scope.
+- `AuthorizationFailed`: Check RBAC assignment, verify role assignment, check at scope (resource, resource group, subscription, management group).
+- `QuotaExceeded`: Check usage limits in Azure portal, request quota increase, review usage metrics.
+- `ServiceUnavailable`: Check Azure service health, retry with backoff, check for regional outage.
 
-### GCP Firebase: "The link is invalid or it has expired"
-**Fix:** Verify link not expired (up to 30 days), check link parameters, regenerate link, check Firebase console for analytics.
+**GCP general errors**
+- `PermissionDenied`: Verify IAM policy, check service account has required role, verify credentials scope, check OAuth scopes.
+- `NotFound`: Verify resource ID/name, check region/project, verify correct environment.
+- `ResourceExhausted`: Check quota, implement exponential backoff with jitter, request quota increase.
+- `FailedPrecondition`: Check resource state, verify prerequisites, check maintenance mode.
+- `OutOfRange`: Check bounds for date, size, index, etc.
 
-### Azure Blob Storage: "The specified blob does not exist"
-**Fix:** Verify container/blob names, list blobs (`az storage blob list`), check case sensitivity, verify upload path.
-
-### Azure: "AuthenticationFailed"
-**Fix:** Verify connection string/account key, check credentials not expired/regenerated, verify account name, check service principal credentials/scope.
+**Cloud provider general troubleshooting**
+1. **Authentication/Authorization:** Verify credentials, check IAM/service account roles, verify resource ARN/region/account.
+2. **Permissions/Policy:** Read the exact denied action/resource from the error, check IAM policy for Allow vs Deny, use least privilege.
+3. **Rate Limits:** Most providers return `429` or `TooManyRequestsException`, implement exponential backoff with jitter.
+4. **Quota/Limit Exceedance:** Read the error for the specific limit, request quota increase via provider console, reduce request rate.
+5. **Region/Availability Zone:** Verify resource is in correct region/account, check cross-region restrictions, ensure service runs in expected zone.
+6. **Network/Firewall:** Verify security groups, firewall rules, network ACLs allow traffic, check outbound internet access, verify VPC endpoints or NAT gateway.
 
 ---
 
 ## 8. Mobile and Web Client Errors
 
 ### CORS error: "Cross-Origin Request Blocked"
-**Fix:** Verify frontend origin in backend `CORSMiddleware allow_origins`, use specific origins in production (no wildcard with credentials), check preflight OPTIONS status, confirm `allow_credentials` matches client policy.
+**Fix:** Verify frontend origin in backend CORS config, use specific origins in production (no wildcard with credentials), check preflight OPTIONS status, confirm `allow_credentials` matches client policy.
 
 ### CORS error: "has been blocked by CORS policy"
 **Fix:** Verify middleware registered before routes, check response headers (`Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`), use exact frontend origin.
@@ -515,9 +534,8 @@ Use this as the single source of truth for error-code troubleshooting. Categoriz
 **Fix:** Update client to modern TLS (1.2+), verify server ciphers, use TLS 1.2+ with strong ciphers, test with `openssl s_client`.
 
 ### Security: JWT/auth errors
-**401 Unauthorized with valid token:** Check token expiry and claims, confirm client sends `Authorization: Bearer` header, verify signing key/issuer/audience/algorithm, refresh token or re-login, keep secrets in env vars.
-
-**403 Forbidden:** Check RBAC, scopes, resource ownership, route guards, hosting/security logs. Do not disable security controls first.
+- **401 Unauthorized with valid token:** Check token expiry and claims, confirm client sends `Authorization: Bearer` header, verify signing key/issuer/audience/algorithm, refresh token or re-login, keep secrets in env vars.
+- **403 Forbidden:** Check RBAC, scopes, resource ownership, route guards, hosting/security logs. Do not disable security controls first.
 
 ---
 

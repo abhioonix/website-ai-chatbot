@@ -1,19 +1,21 @@
 # Backend Error Codes and Troubleshooting Guide
 
-> **Purpose:** A practical reference for diagnosing common backend authentication, API, Python, FastAPI, Node.js/Express, database, server, Git, Docker, and deployment issues.
+> **Purpose:** A general-purpose reference for diagnosing common backend authentication, API, Python, FastAPI, Node.js/Express, database, server, Git, Docker, and deployment issues across AWS, GCP, Azure, and self-hosted environments.
 >
 > **Important:** Not every issue below has a numeric error code. HTTP status codes are standardized response codes; messages such as `ModuleNotFoundError` and `EADDRINUSE` are runtime or operating-system errors.
 
+---
+
 ## Quick Reference: HTTP Status Codes
 
-| Code | Name | What it means | First checks |
-|---|---|---|---|
+|| Code | Name | What it means | First checks |
+|---|---|---|---|---|
 | `400` | Bad Request | The request is invalid or malformed. | Check request syntax, parameters, and JSON formatting. |
 | `401` | Unauthorized | Authentication is missing, invalid, or expired. | Check the token, signature, expiry, and authentication header. |
 | `403` | Forbidden | The caller is authenticated but lacks permission, or access is otherwise denied. | Check roles, permissions, scopes, and route guards. |
 | `404` | Not Found | The requested resource or route cannot be found. | Check the URL, route registration, and resource ID. |
 | `409` | Conflict | The request conflicts with the current resource state. | Check duplicate records, version conflicts, and resource state. |
-| `422` | Unprocessable Entity | The server cannot process the request data as provided. FastAPI commonly uses this for validation failures. | Compare the request body and parameters with the validation schema. |
+| `422` | Unprocessable Entity | The server cannot process the request data as provided. | Compare the request body and parameters with the validation schema. |
 | `429` | Too Many Requests | The client has exceeded a rate limit. | Check request frequency and the rate-limit policy; respect `Retry-After` when provided. |
 | `500` | Internal Server Error | An unexpected server-side failure occurred. | Inspect application logs and the traceback. |
 | `502` | Bad Gateway | A proxy or gateway received an invalid response from an upstream server. | Check whether the application is running and whether the proxy target is correct. |
@@ -28,445 +30,567 @@
 
 **Possible causes**
 - The token has expired or is not being sent correctly.
-- The token was signed with a different or incorrect secret/key.
-- The server expects a different token format or issuer/audience.
-- The server and client clocks differ enough to affect time validation.
+- The token is malformed or uses the wrong algorithm.
+- The signing key or issuer/audience claims don't match.
+- The token was issued by a different authority.
 
-**Troubleshooting**
-1. Inspect the token's expiry and required claims without exposing the token publicly.
-2. Confirm the client sends the expected `Authorization: Bearer <token>` header.
-3. Verify the configured signing key, issuer, audience, and algorithm match between token creation and validation.
-4. Refresh the token or sign in again if it has expired.
-5. Keep secrets in environment variables or a secrets manager; never commit them to source control.
+**Fix**
+1. Check token expiry and claims.
+2. Confirm the client sends `Authorization: Bearer <token>`.
+3. Verify signing key, issuer, audience, and algorithm.
+4. Refresh the token or re-login.
+5. Keep secrets (signing keys, API keys) in environment variables or a secrets manager.
 
 ### `403 Forbidden`
 
-**Possible causes:** Missing role, permission, scope, or access policy.
+**Possible causes**
+- Missing role or permission scope.
+- Resource ownership mismatch.
+- Route guard not applied.
+- Hosting/security policy or proxy rule blocks access.
 
-**Troubleshooting:** Check role-based access control (RBAC), token scopes, resource ownership rules, and route guards. Confirm that the user is authenticated but is not being granted access to an action they should be allowed to perform.
+**Fix**
+1. Check role/permission assignments.
+2. Verify resource ownership.
+3. Apply route guards consistently.
+4. Review security logs for the denied action.
+5. Do not disable security controls as a first fix.
 
-### Session expired
+### Token / Key Management
 
-**Possible causes:** Session expiry, cookie expiry, server-side session timeout, or a missing session cookie.
+**Common issues**
+- `JWT` signing key mismatch.
+- Expired tokens.
+- API key not set, wrong format, or not sent.
+- Credentials stored in code instead of environment variables.
 
-**Troubleshooting:** Check server-side session settings and cookie `Max-Age`/`Expires` values. Ensure the client sends the cookie. Extend the lifetime only if appropriate for the application's security requirements; otherwise, prompt the user to sign in again.
-
----
-
-## 2. Database and Server Issues
-
-### Database connection refused
-
-**Possible causes:** The database service is stopped, the host or port is wrong, a network rule blocks access, or the application is using the wrong connection string.
-
-**Troubleshooting**
-1. Check that the database is running and listening on the expected host/port.
-2. Verify the database name, host, port, username, password, and TLS options in the connection configuration.
-3. Check firewall rules and container/network configuration.
-4. For Docker Compose, use the database **service name** as the host when connecting from another container. `localhost` inside a container refers to that same container, not another container.
-5. On a system using systemd, a PostgreSQL service can often be checked with `systemctl status postgresql` (service names vary by installation).
-
-### Database authentication failed
-
-**Possible causes:** Incorrect credentials, connecting to the wrong database, or insufficient database privileges.
-
-**Troubleshooting:** Verify the environment variables and confirm that the database user has only the permissions required by the application. Grant syntax differs across database engines; use the correct syntax for PostgreSQL, MySQL, or the database in use. Do not copy a MySQL-specific `GRANT` command into PostgreSQL.
-
-### Connection pool exhausted
-
-**Possible causes:** Too many concurrent requests, sessions/connections not being closed, or a pool limit that is too small for the workload.
-
-**Troubleshooting**
-- Review pool size, overflow, timeout, and database connection limits for the ORM/driver in use (for example, SQLAlchemy or Prisma).
-- Close sessions and connections reliably, including on exceptions. Use context managers or framework dependency cleanup where supported.
-- Look for leaked connections and long-running queries before simply increasing the pool size.
-
-### Database migration or schema-drift errors
-
-**Possible causes:** The database schema differs from the migration history, migrations conflict, or a migration was changed after being applied.
-
-**Troubleshooting**
-- Read the migration tool's output and compare the current schema with migration history.
-- With Alembic, review an autogenerated revision before applying it, then use `alembic upgrade head` when the migration is correct.
-- For genuinely conflicting migration branches, create a merge migration using the tool's documented workflow.
-- Avoid editing migrations that have already been applied in shared or production environments. Create a new corrective migration instead.
-
-### Port binding errors: `EADDRINUSE` / “Address already in use”
-
-**Possible causes:** Another process is already listening on the requested port.
-
-**Troubleshooting**
-- Choose another port or stop the process that owns the port, after verifying it is safe to stop.
-- Linux/macOS example: `lsof -i :3000`
-- Windows example: `netstat -ano | findstr :3000`
-- Configure the port consistently through the application's `PORT` setting and the deployment/proxy configuration.
-
-### “Permission denied” when binding a port
-
-On many Unix-like systems, ports below `1024` require elevated privileges. Prefer an unprivileged application port such as `8000` or `3000` and put a reverse proxy such as Nginx in front of it rather than running the application as root.
-
-### `500 Internal Server Error`
-
-**Possible causes:** An unhandled exception, missing environment variable, failed database operation, or another unexpected backend failure.
-
-**Troubleshooting**
-1. Check application logs and the full traceback around the failed request.
-2. Reproduce the issue with the same request and environment.
-3. Verify environment variables and upstream services.
-4. Log useful diagnostic details while avoiding credentials, tokens, and personal data.
-5. Enable detailed debug output only in a controlled development environment; do not expose debug tracebacks to production users.
-
-### Nginx `502 Bad Gateway`
-
-**Possible causes:** The upstream application is stopped, the upstream port/socket is wrong, or the proxy cannot reach the application.
-
-**Troubleshooting:** Check application logs and listening ports, verify Nginx's `proxy_pass`/upstream settings, and validate the Nginx configuration with `nginx -t` before reloading it.
-
-### `504 Gateway Timeout`
-
-**Possible causes:** The upstream service takes too long to respond, a query is slow, or a timeout is too short.
-
-**Troubleshooting:** Check upstream health, database query plans, external API calls, application logs, and proxy/application timeout settings. Fix the underlying latency before increasing timeouts indiscriminately.
-
-### SSL/TLS errors
-
-**Possible causes:** An expired certificate, a hostname mismatch, an incomplete certificate chain, an untrusted certificate, or incorrect client/server TLS settings.
-
-**Troubleshooting:** Verify certificate validity and hostname, serve the required certificate chain, and renew certificates using the relevant certificate-management process (for example, Certbot when applicable). For local development, use a trusted local development certificate. Avoid disabling certificate verification as a permanent workaround.
-
-### Docker container exits immediately
-
-**Possible causes:** The application crashes during startup, required environment variables are missing, the image has an incorrect command, or the container's main process finishes.
-
-**Troubleshooting**
-- Read logs: `docker logs <container>`
-- Inspect state and exit code: `docker ps -a` and `docker inspect <container>`
-- Verify the image's `CMD`/entrypoint, configuration, dependencies, and environment.
-- For interactive diagnosis, use a suitable shell available in the image; not every image contains `bash`.
-
-### Process management
-
-Use a process manager or deployment platform appropriate for the environment. For example, PM2 can manage a Node.js process with `pm2 start app.js --name api`, and its startup instructions can be configured with `pm2 startup` followed by `pm2 save`. Review the commands and permissions for your operating system before enabling startup on boot.
+**Fix**
+1. Keep secrets in env vars or a secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.).
+2. Verify env vars are set in the deployment environment.
+3. Rotate keys on exposure.
+4. Check token signing algorithms (HS256 vs RS256) match between issuer and verifier.
 
 ---
 
-## 3. FastAPI Troubleshooting
+## 2. API Errors (Request / Response)
 
-### `uvicorn app.main:app` fails with “Could not import module”
+### `400 Bad Request`
 
-**Possible causes:** The command is running from the wrong directory, the module path is wrong, or the application object has a different name.
+**Fix:**
+1. Validate request syntax, parameters, and JSON formatting.
+2. Check required fields and data types.
+3. Check content-type header (`application/json`).
 
-**Troubleshooting:** Run the command from the project root and confirm that `app/main.py` exists and defines an object named `app`. The target `app.main:app` means **module** `app.main`, **object** `app`. Adjust the import target if your structure differs.
+### `404 Not Found`
 
-### CORS errors in the browser
+**Fix:**
+1. Verify the URL, route registration, and resource ID.
+2. Check the backend base URL and path.
+3. Confirm the deployment version matches the client.
 
-CORS is enforced by the browser. Configure `CORSMiddleware` with the frontend's exact origin(s). Do not use a wildcard origin when sending credentialed requests.
+### `405 Method Not Allowed`
 
-Example for development (replace the origin with the frontend's actual origin):
+**Fix:**
+1. Check the HTTP method used.
+2. Configure allowed methods on the route.
+3. Return the proper `Allow` header.
 
-```python
-from fastapi.middleware.cors import CORSMiddleware
+### `409 Conflict`
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
+**Fix:**
+1. Check for duplicate records.
+2. Use unique constraints to prevent conflicts.
+3. Return a clear conflict message with details.
 
-Use an explicit allowlist in production. The frontend must also send credentials when cookies or other browser credentials are required.
+### `413 Payload Too Large`
+
+**Fix:**
+1. Reduce body size.
+2. Send only needed data.
+3. Check server, proxy, and platform limits.
+
+### `415 Unsupported Media Type`
+
+**Fix:**
+1. Send the expected `Content-Type` header.
+2. Verify the parser or upload handler is enabled.
 
 ### `422 Unprocessable Entity`
 
-**Likely cause:** The request's body, path, or query parameters do not match FastAPI/Pydantic validation requirements.
+**Fix:**
+1. Compare the request body and parameters with the validation schema.
+2. Check field types, required fields, and format constraints.
 
-**Troubleshooting:** Read the response's validation details, check required fields and types, confirm JSON requests use `Content-Type: application/json`, and test the request through `/docs`. Ensure the client sends the expected structure rather than a string or form body when JSON is required.
+### `429 Too Many Requests`
 
-### Dependency injection and cleanup
+**Fix:**
+1. Respect `Retry-After`.
+2. Use exponential backoff with jitter.
+3. Debounce rapid frontend input.
+4. Check rate-limit settings in the deployment config.
 
-Use `Depends()` for shared dependencies such as authentication and database sessions. For resources that must be cleaned up, use a dependency with `yield` and close/release the resource in its cleanup path. Dependencies are generally cached within one request by default unless configured otherwise.
+### `500 Internal Server Error`
 
-### Background work
+**Fix:**
+1. Inspect application logs and the traceback.
+2. Verify environment variables are set correctly.
+3. Reproduce with the same request/body.
+4. Check recent changes (deploy, config, dependency).
+5. Never expose secrets or stack traces to end users.
 
-Use FastAPI `BackgroundTasks` for small tasks that can run after the response is returned. Use a task queue such as Celery or RQ for heavy, retryable, long-running, or distributed jobs.
+### `502 Bad Gateway`
 
-### Async versus sync endpoints
+**Fix:**
+1. Verify the application is running.
+2. Check whether the proxy target is correct (host, port).
+3. Verify the backend is healthy.
 
-FastAPI runs a normal `def` path operation in a threadpool; `async def` runs on the event loop. Do not call blocking operations such as `time.sleep()` or blocking network I/O directly inside `async def`. Use async-compatible clients (for example, `httpx.AsyncClient`) or offload blocking work appropriately.
+### `503 Service Unavailable`
 
-### Path and query parameters
+**Fix:**
+1. Check service health (health endpoint).
+2. Verify deployment status and maintenance mode.
+3. Check capacity (CPU, memory, disk).
+4. Verify external dependencies (database, cache, queue, AI provider) are available.
+5. Retry after a delay with exponential backoff.
 
-Path parameters are part of the URL and are generally required. Query parameters follow `?` and may have defaults. Use FastAPI's `Path()` or `Query()` validators where appropriate (for example, length limits and numeric bounds); validation options depend on the parameter type and installed FastAPI/Pydantic version.
+### `504 Gateway Timeout`
 
-### WebSocket issues
-
-Define a WebSocket route with `@app.websocket("/ws")`, accept the connection with `await websocket.accept()`, and handle client disconnects (for example, using `WebSocketDisconnect`). Check proxy configuration and network support if WebSocket connections fail only after deployment.
+**Fix:**
+1. Check upstream latency.
+2. Review timeouts in the backend, proxy, and hosting platform.
+3. Check database query performance.
+4. Verify the AI provider or external service is responding.
+5. Retry safely after a delay.
 
 ---
 
-## 4. Python Troubleshooting
+## 3. Python-Specific Errors
 
 ### `ModuleNotFoundError`
 
-**Possible causes:** A package is not installed, the wrong Python interpreter or virtual environment is active, the working directory/module path is wrong, or a package layout/import path is incorrect.
+**Cause:** Python cannot find the module.
 
-**Troubleshooting**
-1. Activate the project's virtual environment.
-2. Install project dependencies: `python -m pip install -r requirements.txt`
-3. Confirm which interpreter is running: `python --version` and `python -m pip --version`.
-4. Run the command from the project root and verify the import path and package layout. An `__init__.py` may be needed for some package layouts, though namespace packages can work without one.
+**Fix:**
+1. Run from the project root directory.
+2. Ensure the virtual environment is activated.
+3. Install dependencies: `pip install -r requirements.txt`.
+4. Check `sys.path` includes the project root.
+5. Verify `__init__.py` is present in packages.
 
-### `ImportError: cannot import name ...`
+### `ImportError: cannot import name`
 
-**Possible causes:** A misspelled or missing symbol, the wrong module being imported, or a circular import.
+**Cause:** Circular import or name mismatch.
 
-**Troubleshooting:** Check spelling and the source module, confirm which file Python is loading, and simplify circular dependencies. Moving an import inside a function can sometimes help, but prefer reorganizing shared code so modules do not depend on each other cyclically.
+**Fix:**
+1. Check spelling and that the symbol exists in the source module.
+2. Avoid top-level imports that trigger circular dependencies.
+3. Move imports inside functions or classes.
+4. Check that the package is installed.
 
-### Create and activate a virtual environment
+### `TypeError: unsupported operand type(s)`
 
-Create one from the project directory:
+**Cause:** Attempting an operation on incompatible types.
 
-```bash
-python -m venv .venv
-```
+**Fix:**
+1. Verify variable types.
+2. Convert types explicitly.
+3. Check API response data types match expectations.
 
-Activate it:
+### `ValueError: invalid literal`
 
-```bash
-# Linux/macOS
-source .venv/bin/activate
+**Cause:** Converting a string to a number or value fails.
 
-# Windows Command Prompt
-.venv\Scripts\activate.bat
+**Fix:**
+1. Check string content (whitespace, special chars, encoding).
+2. Verify expected range/format.
+3. Use `try/except ValueError` for graceful handling.
+4. Validate input before conversion.
 
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-```
+### `KeyError: 'key'`
 
-Deactivate it with `deactivate`. Install dependencies inside the active environment and use `python -m pip` to ensure pip belongs to that interpreter.
+**Cause:** Accessing a dictionary key that doesn't exist.
 
-### `pip install` fails
+**Fix:**
+1. Check if the key exists or use `dict.get('key')`.
+2. Use `try/except KeyError` for graceful handling.
+3. Verify the data source (API response, JSON, env vars).
 
-**Troubleshooting:** Upgrade pip with `python -m pip install --upgrade pip`, confirm the Python version is supported by the package, and read the first meaningful error in the build output. Native packages may require compiler/build tools appropriate for the operating system. For SSL errors, fix the certificate/proxy configuration; do not bypass TLS verification unless a trusted administrator has provided a narrowly scoped, temporary development procedure.
+### `IndexError: list index out of range`
 
-### Asyncio event-loop errors
+**Cause:** Accessing an index beyond the list length.
 
-Messages such as “Event loop is closed” or “cannot run nested event loop” can indicate incorrect event-loop management.
+**Fix:**
+1. Check list length before accessing.
+2. Verify API response data structure.
+3. Add bounds checking in loops and range access.
 
-**Troubleshooting:** Do not call `asyncio.run()` from inside an already running event loop. Use `await` inside async functions. From ordinary synchronous top-level code, `asyncio.run()` can be used once to run the main coroutine.
+### `AttributeError: 'module' has no attribute 'name'`
 
-### Type errors and tracebacks
+**Cause:** Accessing a non-existent attribute.
 
-Read the exception type and message, then inspect the traceback frames to locate the line in your code that triggered the problem. Check for `None`, unexpected types, missing dictionary keys, and invalid assumptions about input. Use targeted logging, a debugger, or `breakpoint()` to inspect values.
+**Fix:**
+1. Check the module or object has the attribute.
+2. Verify the import path (module vs. class vs. function).
+3. Check for typos and installed version compatibility.
 
-### Environment variables in Python
+### `FileNotFoundError`
 
-Use `os.getenv("NAME")` for optional values and validate required configuration during startup. Use `python-dotenv` for local `.env` files if needed. `os.environ.setdefault()` does not replace a value that is already set. Never commit secrets or production credentials to source control.
+**Cause:** File does not exist at the expected path.
 
-### Python logging
+**Fix:**
+1. Verify the path is correct.
+2. Check the file exists.
+3. Use `os.path.join()` for cross-platform path construction.
+4. Allow environment variable override for config paths.
 
-Prefer the `logging` module to scattered `print()` calls. A simple setup is:
+### `PermissionError: [Errno 13] Permission denied`
 
-```python
-import logging
+**Cause:** File or directory permissions prevent access.
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-```
+**Fix:**
+1. Check permissions.
+2. Verify the running user has read/write access.
+3. On external drives (exFAT/NTFS), be aware of filesystem limitations (no symlinks).
 
-Use `logger.exception("Description of failure")` inside an exception handler to include the traceback. Avoid logging passwords, tokens, or personal data.
+### `OSError: [Errno 98] Address already in use`
+
+**Cause:** Port already occupied.
+
+**Fix:**
+1. Find the process: `lsof -i :<port>` or `ss -tlnp`.
+2. Kill the process or change the port.
+3. Check for multiple instances of the app.
+
+### `ConnectionRefusedError: [Errno 61] Connection refused`
+
+**Cause:** Target service is not running or not listening.
+
+**Fix:**
+1. Verify the target service is running.
+2. Check host/port in the connection string.
+3. For Docker, use the container name as host.
+4. Check firewall rules and security groups.
+
+### `TimeoutError` / `socket.timeout`
+
+**Cause:** Operation took longer than the timeout limit.
+
+**Fix:**
+1. Review timeout settings in config.
+2. Check if the target service is slow or overloaded.
+3. Increase timeout if the operation legitimately takes longer.
+4. Add retry logic with exponential backoff.
+
+### `MemoryError`
+
+**Cause:** Exceeded available RAM.
+
+**Fix:**
+1. Reduce workload size or increase memory limits.
+2. Profile memory usage with `memory-profiler` or `tracemalloc`.
+3. Fix memory leaks: unbounded caches, retained references, accumulating listeners.
+4. Restart as temporary mitigation.
+
+### Python debugging tips
+
+1. **Logging:** Use the `logging` module with levels (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`).
+2. **Stack traces:** Read bottom-up; the last frame is where the error originated.
+3. **Breakpoints:** Use `breakpoint()` (Python 3.7+) or `import pdb; pdb.set_trace()`.
+4. **Profiling:** Use `py-spy` for CPU profiling, `memory-profiler` for memory.
+5. **Type checking:** Run `mypy` to catch type errors early.
+6. **Linting:** Use `ruff` or `flake8` to catch style and potential bugs.
 
 ---
 
-## 5. Node.js and Express Troubleshooting
+## 4. Node.js / Express-Specific Errors
 
 ### `npm install` fails
 
-**Possible causes:** Dependency conflicts, unsupported Node.js version, registry/network problems, or native dependencies that cannot build.
+**Fix:**
+1. Clear cache: `npm cache clean --force`.
+2. Delete `node_modules` and `package-lock.json`, then run `npm install`.
+3. Check Node version matches `package.json` `engines` field.
+4. Use `nvm` to switch versions.
+5. If native modules fail: `npm rebuild` or install build tools.
 
-**Troubleshooting:** Check the Node.js version and the package's `engines` requirements, review the first actionable npm error, and confirm registry/network access. For a project with a committed lockfile, `npm ci` is often a reproducible way to install dependencies. Clear the npm cache only when there is evidence of cache corruption; avoid deleting the lockfile as a first step because it can change dependency versions. Use a version manager such as `nvm` when the project requires another Node.js version.
+### `EADDRINUSE: port already in use`
 
-### `EADDRINUSE: address already in use`
-
-**Cause:** Another process is listening on the configured port.
-
-**Troubleshooting:** Identify the process with `lsof -i :3000` on Linux/macOS or `netstat -ano | findstr :3000` on Windows. Stop it only after confirming it is safe, or configure a different port using the `PORT` environment variable.
+**Fix:**
+1. Find the process: `lsof -i :3000` (Linux/Mac) or `netstat -ano | findstr :3000` (Windows).
+2. Kill the process or change the `PORT` environment variable.
 
 ### `Cannot find module`
 
-**Possible causes:** A dependency is not installed, a local path is wrong, or CommonJS/ES-module settings do not match the code.
+**Cause:** Dependencies not installed, wrong path, or CommonJS/ESM mismatch.
 
-**Troubleshooting:** Run the appropriate install command, verify local imports use paths such as `./utils.js` where required, and check `package.json` module configuration. For ES modules, set `"type": "module"` in `package.json`; follow the runtime's module rules consistently.
+**Fix:**
+1. Run `npm install`.
+2. Verify `require()` or `import` paths are relative (`./`) for local files.
+3. For ES modules, ensure `"type": "module"` is set in `package.json`.
+4. For dynamic imports, wrap in `async` function and use `await import()`.
 
 ### Express middleware order
 
-Middleware executes in registration order. Register parsers such as `express.json()` before routes that read `req.body`. Register not-found handling after application routes and error-handling middleware (with the `(err, req, res, next)` signature) after the routes/middleware whose errors it handles.
+**Fix:**
+1. Register parsers (`express.json()`) before routes that read `req.body`.
+2. Register 4-argument error handlers (`err, req, res, next`) LAST, after routes.
 
-### CORS in Express
+### Express CORS
 
-Install/configure the `cors` middleware before the routes that need it. Example for a local frontend:
+**Fix:**
+1. Use the `cors` middleware before routes that need it.
+2. Use specific origins in production (not wildcard).
+3. For credentialed requests, set `credentials: true` and verify `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials` headers.
 
-```javascript
-const cors = require("cors");
-app.use(cors({
-  origin: "http://localhost:3000",
-  credentials: true,
-}));
+### Nodemon not restarting
+
+**Fix:**
+1. Check `nodemon.json` ignore/watch patterns.
+2. Verify the changed file is within watched paths.
+3. Check filesystem watcher limits (`fs.inotify.max_user_watches`).
+4. Restart manually with `rs` in the Nodemon terminal.
+
+### Common Node.js error codes
+
+| Code | Name | Fix |
+|---|---|---|
+| EADDRINUSE | Port already in use | Change port or kill process |
+| ECONNREFUSED | Connection refused | Verify target service running, check host/port |
+| ENOTFOUND | DNS lookup failed | Check domain, DNS config, firewall |
+| ETIMEDOUT | Connection timed out | Check network, provider status, increase timeout |
+| EPERM | Permission denied | Check file permissions, run with correct user |
+| EACCES | Permission denied | Check file/dir permissions |
+| ENOENT | No such file or directory | Verify path, check file exists |
+| EISDIR | Is a directory | Use fs.readFileSync for files, not directories |
+| EMFILE | Too many open files | Increase limit, close handles, fix leaks |
+
+---
+
+## 5. FastAPI-Specific Errors
+
+### `ModuleNotFoundError` (FastAPI)
+
+**Fix:**
+1. Run from the project root.
+2. Verify `app/main.py` (or entry module) exists.
+3. Check the module path matches your project structure (e.g., `app.main:app`).
+4. Verify Python environment has FastAPI installed: `pip list | grep fastapi`.
+
+### FastAPI CORS
+
+**Fix:**
+```python
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://your-frontend.com"],  # specific origins, not wildcard
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+    allow_credentials=True,
+)
 ```
 
-Use the real frontend origin(s) in production. Credentialed requests cannot use `Access-Control-Allow-Origin: *`. The browser client must also be configured to send credentials where required.
+**Production:** Use specific origins, not `"*"`. Credentialed requests cannot use wildcard origins.
 
-### Unhandled promise rejection / async route errors
+### FastAPI `422 Unprocessable Entity`
 
-Handle rejected promises from asynchronous code. Use `try/catch` and pass failures to Express error middleware, or use a wrapper compatible with the version of Express in use. Runtime behavior for unhandled rejections depends on the Node.js version and runtime settings; do not rely on unhandled rejections as an error-handling strategy.
+**Cause:** Request body doesn't match the Pydantic schema.
 
-### Environment variables in Node.js
+**Fix:**
+1. Check field types (string, int, float, bool, list, etc.).
+2. Verify required fields are present.
+3. Check `Content-Type: application/json` header.
+4. Use `/docs` or `/redoc` to test requests interactively.
 
-Read configuration with `process.env.NAME`. For a local `.env` file, use a library such as `dotenv` when appropriate. Validate required values at startup and never commit `.env` files or secrets. In CommonJS, a common pattern is `require("dotenv").config()`; ES modules use their corresponding import syntax.
+### FastAPI dependency injection
 
-### Nodemon does not restart
+**Fix:**
+1. Use `Depends()` for shared dependencies (DB sessions, auth).
+2. Use `yield` with cleanup code after it (e.g., close DB session).
+3. Dependencies are cached within one request by default.
 
-Check `nodemon.json` and ignore/watch patterns, confirm the changed file is within the watched paths, and check filesystem watcher limits where relevant. You can type `rs` in the Nodemon terminal to restart manually.
+### FastAPI background work
 
-### `EPERM` or symlink errors on external drives
+**Fix:**
+1. Use `BackgroundTasks` for fire-and-forget work after response.
+2. Use Celery, RQ, or a message queue for heavy, retryable, long-running, or distributed jobs.
 
-Some filesystems and mount configurations have limited symlink or permission support. Check the exact error and filesystem mount options. If the project cannot reliably install dependencies on the external drive, move it to a supported local filesystem and retry rather than applying broad permission changes.
+### FastAPI async vs sync endpoints
+
+**Fix:**
+1. `def` runs in a threadpool; `async def` runs on the event loop.
+2. Never call blocking I/O inside `async def`.
+3. Use async-compatible clients (`httpx.AsyncClient`, `asyncpg`).
+4. Offload blocking work to a threadpool.
+
+### FastAPI path and query parameters
+
+**Fix:**
+1. Path params are part of the URL and required: `@app.get("/items/{item_id}")`.
+2. Query params follow `?` and may have defaults.
+3. Use `Path()` or `Query()` for validation (length, bounds, regex).
+
+### FastAPI WebSocket
+
+**Fix:**
+1. Define route: `@app.websocket("/ws")`.
+2. Accept connection: `await websocket.accept()`.
+3. Handle disconnects: catch `WebSocketDisconnect`.
+4. Check proxy config for WebSocket upgrade headers.
+
+### FastAPI error handling
+
+**Fix:**
+1. Use `try/except` in routes and return structured JSON errors.
+2. Register exception handlers for global error handling.
+3. Return consistent error response shape: `{"error": "human-readable message"}`.
+4. Log the full exception with traceback (never return it to clients).
+
+### FastAPI health check
+
+**Fix:**
+1. Expose `/health` returning 200 on success.
+2. Separate liveness checks (process running) from readiness checks (dependencies available).
+3. Optionally include dependency status (DB, Redis, queue).
+
+### FastAPI common error codes
+
+| Code | Name | Fix |
+|---|---|---|
+| 400 | Bad Request | Validate request body against Pydantic schema |
+| 401 | Unauthorized | Provide valid `Authorization: Bearer` header |
+| 403 | Forbidden | Check RBAC, API key scope, resource ownership |
+| 404 | Not Found | Verify route path and base URL |
+| 405 | Method Not Allowed | Configure allowed methods on route |
+| 422 | Unprocessable Entity | Validate request body against Pydantic schema |
+| 429 | Too Many Requests | Implement exponential backoff with jitter |
+| 500 | Internal Server Error | Check backend logs, verify env vars, reproduce |
+| 502 | Bad Gateway | Verify backend running, check proxy config |
+| 503 | Service Unavailable | Check health endpoint, verify deps, retry with backoff |
+| 504 | Gateway Timeout | Review timeout settings, identify slow component |
 
 ---
 
-## 6. Application Logs and Debugging
-
-### Reading stack traces
-
-1. Read the exception/error type and message first.
-2. Follow the traceback frames to the line of code that raised the error; in Python, the final line typically states the exception, while the frames show the call path.
-3. Look for the first relevant frame in your own code and inspect the values passed into it.
-4. Reproduce with a small, known input and add focused logging or a breakpoint.
-
-A stack trace does not always mean the last displayed source frame is in your own code; use the exception message and call path together.
-
-### Useful debugging tools
-
-- **Python:** `breakpoint()` or `import pdb; pdb.set_trace()`; VS Code debugger.
-- **Node.js:** `node --inspect app.js` and inspect with Chrome DevTools or a supported IDE debugger.
-- **Logs:** Use severity levels such as `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL`.
-
-Use structured logging where possible. In Python, `logging` is built in; in Node.js, libraries such as Winston or Pino can help. Log exceptions with tracebacks where appropriate, but never log passwords, authentication tokens, API keys, or unnecessary personal data.
-
----
-
-## 7. Git Issues
-
-### Merge conflicts
-
-Git marks conflicted areas with markers such as `<<<<<<<`, `=======`, and `>>>>>>>`.
-
-**Resolution:** Edit the file to keep the intended content and remove the conflict markers, run tests, then stage the resolved file with `git add <file>` and complete the merge commit if Git requires one. To cancel a merge in progress, use `git merge --abort`. For a rebase conflict, resolve and stage files, then use `git rebase --continue`; use `git rebase --abort` to cancel the rebase.
-
-### `git push` rejected
-
-**Common cause:** The remote branch has commits not present locally, or the branch has a policy/permission restriction.
-
-**Troubleshooting:** Read Git's rejection message first. When the history can be safely rebased, use `git pull --rebase`, resolve conflicts, run tests, then push. Check branch permissions and protection rules if the rejection is not due to diverged history. Avoid force-pushing to shared branches; it can overwrite other contributors' work.
-
----
-
-## 8. Docker and Deployment
-
-### Docker build fails
-
-**Troubleshooting:** Check Dockerfile syntax, the base image, dependency installation, and build logs. Add a `.dockerignore` file to exclude unneeded files such as local virtual environments, `node_modules`, caches, and secrets from the build context. Order Dockerfile steps to make sensible use of layer caching. Consider multi-stage builds when they simplify or reduce the final image.
-
-### Docker networking problems
-
-- Containers on the same user-defined Docker network can typically reach one another by container/service name.
-- Inside a container, `localhost` refers to that container itself.
-- Publish ports with `-p host_port:container_port` when host access is needed.
-- Confirm services listen on the expected interface and port and that the required network exists.
+## 6. Deployment, DevOps, and Infrastructure
 
 ### Deployment checklist
 
-- Configure required environment variables and secrets on the deployment platform.
-- Use an appropriate production server/process configuration (for example, Uvicorn workers or Gunicorn for supported Python deployments).
-- Disable debug mode and avoid exposing stack traces publicly.
-- Restrict CORS origins and configure cookies/TLS correctly.
-- Apply database migrations through the deployment process.
-- Add a health endpoint and monitor application/error logs.
-- Verify startup, connectivity, permissions, and rollback procedures.
+1. Set env vars on the platform (never commit secrets).
+2. Use a production server (gunicorn/uvicorn workers for Python, node cluster for Node).
+3. Disable debug mode in production.
+4. Set CORS origins to specific values.
+5. Run database migrations before starting.
+6. Expose a health check endpoint (`/health`).
+7. Monitor logs for startup errors.
 
 ### Health checks
 
-Provide an endpoint such as `/health` that returns HTTP `200` when the service is healthy. Use liveness and readiness checks appropriately in containers/orchestrators. A deeper readiness check can verify database connectivity, but avoid making a liveness probe depend on a downstream service if that could cause unnecessary restart loops.
+**Fix:**
+1. Expose `/health` returning 200 on success.
+2. Separate liveness checks (process running) from readiness checks (dependencies available).
+3. For readiness, optionally verify critical dependencies (DB, Redis, queue).
+4. Use short timeouts so the app doesn't block on slow dependencies.
 
-### Rate limiting: `429 Too Many Requests`
+### Rate limiting
 
-Use a rate-limiting mechanism suitable for the framework (for example, SlowAPI in FastAPI or `express-rate-limit` in Express). Choose keys and limits according to the threat model, such as IP address or authenticated user, and return `429` when a client exceeds its allowed rate. Include `Retry-After` when appropriate. Configure trusted proxy handling carefully so client IPs cannot be spoofed.
-
----
-
-## 9. Performance and Reliability
+**Fix:**
+1. Use `slowapi` (Python/FastAPI) or `express-rate-limit` (Node.js).
+2. Key by IP or authenticated user.
+3. Return `429 Too Many Requests` with a `Retry-After` header.
+4. Configure per-user or per-IP limits based on your threat model.
 
 ### Memory leaks
 
-**Common causes:** Unbounded caches, retained references, accumulating event listeners, or uncontrolled global state.
-
-**Troubleshooting:** Profile memory over time. Python options include `memory-profiler`; Node.js can use heap snapshots and built-in profiling tools. Restarting may be a temporary mitigation, but identify and fix the root cause.
+**Fix:**
+1. Profile with `memory-profiler` (Python) or heap snapshots (Node.js).
+2. Common causes: unbounded caches, event listener accumulation, global state.
+3. Restart as temporary mitigation.
+4. Fix root cause (add size limits, remove listeners, clear caches).
 
 ### High CPU usage
 
-**Common causes:** Infinite loops, excessive computation, blocking operations inside async code, or pathological regular expressions.
-
-**Troubleshooting:** Profile before optimizing. Tools include `py-spy` for Python and `node --prof` for Node.js. Inspect hot functions, loop conditions, synchronous work, and unexpectedly expensive regular expressions.
-
-### Slow database queries
-
-**Troubleshooting:** Use `EXPLAIN` or, where appropriate, `EXPLAIN ANALYZE` to understand query plans. Consider indexes on frequently filtered/joined columns, avoid N+1 query patterns (for example, with eager loading), limit the result set, and paginate large responses. `EXPLAIN ANALYZE` may execute the query, so use care with expensive or mutating statements and production workloads.
-
-### API versioning
-
-Use a consistent strategy, such as a path prefix (`/api/v1`). Document supported versions and deprecation timelines, and give clients time to migrate before removing an older version. Header-based versioning is also possible; consistency and documentation matter more than the specific strategy.
-
----
-
-## 10. General Troubleshooting Checklist
-
-When an issue occurs, collect enough information to diagnose it without exposing secrets:
-
-1. **Reproduce:** Record the endpoint/command, sanitized input, expected result, and actual result.
-2. **Classify:** Determine whether it is an HTTP response code, application exception, dependency/tool error, network failure, or configuration problem.
-3. **Read logs:** Check the relevant application, proxy, database, and container logs around the failure time.
-4. **Verify configuration:** Check hostnames, ports, environment variables, dependency versions, permissions, and active virtual environments.
-5. **Check recent changes:** Review recent code, dependency, schema, configuration, and deployment changes.
-6. **Test the fix:** Reproduce the original case and run relevant regression tests.
-7. **Document:** Record the symptom, root cause, fix, and any prevention steps.
-
-### LLM: chatbot_gives_no_knowledge_based_answer
 **Fix:**
-1. Call `GET /kb/status`.
-2. Confirm `enabled` is `true`.
-3. Confirm embedding/vector-store config is present.
-4. Confirm source documents are in `knowledge_base/`.
-5. Rebuild the index after adding or changing documents.
+1. Profile with `py-spy` (Python) or `node --prof` (Node.js).
+2. Check for infinite loops, blocking operations in async code, excessive regex backtracking.
+3. Profile hot functions and optimize.
+4. Add rate limiting or worker scaling if CPU is consistently high.
+
+### Port binding / permission denied
+
+**Fix:**
+1. Ports below 1024 require root. Use unprivileged ports (8000, 3000, 8080).
+2. Use a reverse proxy (nginx, nginx, Caddy) for ports 80/443.
+3. "Address already in use" — kill the process or change port.
+
+### Nginx 502 Bad Gateway
+
+**Fix:**
+1. Upstream (app) not running or wrong `proxy_pass` port.
+2. Check app logs and that the app listens on the expected port.
+3. Verify nginx config with `nginx -t`.
+
+### SSL/TLS errors
+
+**Fix:**
+1. Certificate expired or mismatched.
+2. Renew with `certbot` or cloud provider tool.
+3. Ensure full chain is served.
+4. For local dev use `mkcert` for a trusted cert.
+
+### Docker container exits immediately
+
+**Fix:**
+1. Check logs: `docker logs <container>`.
+2. Usually missing CMD, crash on startup, or missing env.
+3. Run interactively: `docker run -it image bash` to debug.
+
+### Process management
+
+**Fix:**
+1. Use systemd or pm2 for auto-restart.
+2. `pm2 start app.js --name api` then `pm2 startup && pm2 save`.
+3. Enable on boot for production deployments.
+
+### Redis connection issues
+
+**Fix:**
+1. Verify Redis is running: `redis-cli ping` → PONG.
+2. Check host/port in connection string.
+3. For Docker, use the container name as host.
+4. Check authentication credentials if required.
+
+### CI/CD deployment failures
+
+**Fix:**
+1. Check deployment logs.
+2. Verify env vars set.
+3. Check build output.
+4. Confirm app reads platform `PORT`.
+5. Review health check settings.
+
+### Common infrastructure error codes
+
+| Code | Name | Fix |
+|---|---|---|
+| 400 | Bad Request | Validate request body |
+| 401 | Unauthorized | Provide valid `Authorization: Bearer` header |
+| 403 | Forbidden | Check RBAC, API key scope, resource ownership |
+| 404 | Not Found | Verify route path and base URL |
+| 405 | Method Not Allowed | Configure allowed methods on route |
+| 429 | Too Many Requests | Implement exponential backoff with jitter |
+| 500 | Internal Server Error | Check backend logs, verify env vars, reproduce |
+| 502 | Bad Gateway | Verify backend running, check proxy config |
+| 503 | Service Unavailable | Check health endpoint, verify deps, retry with backoff |
+| 504 | Gateway Timeout | Review timeout settings, identify slow component |
 
 ---
 
-## Suggested Issue Record Template
+## Safe Troubleshooting Rules
 
-Use this template to document a newly discovered project-specific error:
-
-```markdown
-### [Error title or code]
-
-- **Category:** Authentication / API / Database / Runtime / Deployment / Other
-- **Symptom:** What the user or logs show
-- **Cause:** Confirmed root cause, or the most likely cause if not yet confirmed
-- **Resolution:** Steps taken to fix the issue
-- **Prevention:** Test, alert, configuration check, or process that may prevent recurrence
-- **References:** Relevant logs, issue link, or documentation (remove secrets and personal data)
-```
-
----
-
-**Security reminder:** Never paste real passwords, JWTs, API keys, private certificates, session cookies, or personal data into this file or into shared logs. Replace them with placeholders before sharing diagnostic information.
+- Record the endpoint, timestamp, HTTP status code, and request ID if available.
+- Check the response body and server logs before assuming the cause.
+- Never share API keys, admin tokens, passwords, or unredacted secrets.
+- Do not expose stack traces or internal implementation details to end users.
+- Retry only temporary failures, and use backoff for repeated requests.
+- Treat this document as general guidance; confirm exact behaviour against the deployed application.
