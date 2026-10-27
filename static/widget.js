@@ -50,6 +50,11 @@
 
   var STORAGE_KEY = 'ai_chatbot_history_v1';
 
+  var ICON_CHAT = ['M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z'];
+  var ICON_CLOSE = ['M18 6 6 18', 'M6 6l12 12'];
+  var ICON_SEND = ['M22 2 11 13', 'M22 2l-7 20-4-9-9-4 20-7z'];
+  var ICON_X = ['M18 6 6 18', 'M6 6l12 12'];
+
   // ---------------------------------------------------------------- helpers
   function el(tag, cls, text) {
     var node = document.createElement(tag);
